@@ -9,41 +9,87 @@ second process; the frontend's styles and scripts are split into `css/` and
 ## How it works
 
 ```
-browser  →  server.py (127.0.0.1:5000)  →  opencode serve (127.0.0.1:4096)  →  your AI providers
+browser  →  server.py (127.0.0.1:5000)  →  opencode serve V2 (127.0.0.1:4096)  →  your AI providers
+           desktop app (Windows) ────────────┘
 ```
 
 - `server.py` serves the chat frontend (`index.html` plus `css/styles.css`,
   `js/app.js`, `js/viewer.js`), the tabs/multiplex/debug viewers, the backend
   session viewer, and several JSON API endpoints.
-- Requests that do not match the built-in routes are forwarded to `opencode serve`,
-  which handles all providers/models from your opencode setup (OpenCode Zen,
-  NVIDIA, GitHub Copilot, etc.).
-- Chat replies are **streamed** token-by-token via opencode's event stream; model
-  "thinking" (reasoning) is filtered out — you only see the actual reply.
+- Requests that do not match the built-in routes are forwarded to the shared
+  `opencode serve`, which handles all providers/models from your opencode setup
+  (OpenCode Zen, NVIDIA, GitHub Copilot, etc.).
+- The backend talks the **OpenCode V2 protocol** (`/api/...`) and is protected by
+  Basic auth `opencode:<password>`. The password is pinned (see
+  **Shared server setup** below) so the desktop app, the CLI, and `server.py`
+  all use the same credential.
+- Chat replies are **streamed** token-by-token via the backend's `/api/event`
+  SSE stream (`session.text.delta`); model "thinking" (reasoning) is filtered out
+  — you only see the actual reply. Completion is detected by polling the message
+  endpoint (V2 does not broadcast a completion event on the SSE stream).
 - All viewer pages **auto-refresh every 2 seconds**, use absolute URLs only (port
   always present, no `//`, no relative fetches), and are fully self-contained with
   no client-side state. Output is deterministic (no randomness, no timestamps).
+
+## Shared server setup (Windows desktop + WSL)
+
+The OpenCode **Desktop app** (Windows) and this repo (WSL) share **one** `opencode
+serve` on port 4096 running inside WSL. WSL2 localhost forwarding makes
+`127.0.0.1:4096` reachable from Windows, so both sides read and write the same
+sessions — start a chat on one side and continue it on the other.
+
+1. Start the shared serve inside WSL (pinned password, persistent):
+
+   ```bash
+   cd ~/nvidia/bot_battle_chat
+   bash start_shared_serve.sh
+   ```
+
+   The password is written to `.server-password` (default `shared-chat-4096`)
+   and exported to the serve process as `OPENCODE_SERVER_PASSWORD`.
+
+2. Point the Desktop app at it: open the **Server picker**, add
+   `http://127.0.0.1:4096`, and enter the password when asked. The Desktop app
+   then lists/opens the same sessions the WSL side sees.
+
+3. `server.py` picks up the same password automatically (env var →
+   `.server-password` file → default), so no extra config is needed.
+
+> Sessions from the old V1-era Desktop install were auto-migrated by V2, and any
+> session that only lived in the Desktop's own service DB can be moved to the
+> shared server with the export/import endpoints
+> (`GET /api/experimental/session/{id}/export` →
+> `POST /api/experimental/session/import`).
+
+### Models and the battle flow on V2
+
+In V2 the model is a **session property**, not a per-prompt field. The battle flow
+(one shared "Bot battle" session, models A/B alternating per turn) therefore calls
+`POST /api/session/{id}/model` to switch the session's model before every prompt
+that reuses a session.
 
 ## File layout
 
 ```
 bot_battle_chat/
-├── server.py       # the entire server (routing, APIs, proxy, backend bridge)
-├── index.html      # chat frontend markup (HTML only)
+├── server.py             # the entire server (routing, APIs, proxy, V2 backend bridge)
+├── start_shared_serve.sh # starts the shared V2 serve on :4096 with a pinned password
+├── index.html            # chat frontend markup (HTML only)
 ├── css/
-│   └── styles.css  # chat frontend styles
+│   └── styles.css        # chat frontend styles
 ├── js/
-│   ├── app.js      # chat frontend application logic
-│   └── viewer.js   # shared message renderer (chat page + viewer pages)
-├── diag.sh         # bash diagnostics
+│   ├── app.js            # chat frontend application logic
+│   └── viewer.js         # shared message renderer (chat page + viewer pages)
+├── diag.sh               # bash diagnostics
 └── README.md
 ```
 
 ## Requirements
 
 - Python 3 (standard library only — no pip installs)
-- The `opencode` CLI running as `opencode serve` on port 4096 and authenticated
-  (`opencode auth login` if you haven't)
+- OpenCode V2 (`opencode serve` on port 4096, started via
+  `start_shared_serve.sh` or with `OPENCODE_SERVER_PASSWORD` set) and
+  authenticated (`opencode auth login` if you haven't).
 
 ## Usage
 

@@ -10,6 +10,9 @@ env/
 *.log
 nohup.out
 
+# Pinned password for the shared OpenCode serve (created by start_shared_serve.sh)
+.server-password
+
 # OS / editor
 .DS_Store
 Thumbs.db

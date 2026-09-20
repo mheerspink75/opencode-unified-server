@@ -3,8 +3,13 @@
 and multi-tab debugging all in one self-contained file.
 
 Runs entirely from a single process on http://127.0.0.1:5000 with no second
-command and no second process. Session data is read from the OpenCode backend at
-http://127.0.0.1:4096 (external, read-only); everything else is served here.
+command and no second process. Session data is read from the OpenCode V2
+backend at http://127.0.0.1:4096 (external, read-only, Basic-auth protected);
+everything else is served here.
+
+The backend is the shared `opencode serve` on the V2 protocol (/api/...).
+Its password is pinned via $OPENCODE_SERVER_PASSWORD or .server-password
+(see backend_password()). All backend calls send Basic auth opencode:<pw>.
 
 Endpoints:
   GET  /                               bot battle frontend (index.html)
@@ -40,6 +45,7 @@ The default browser opens with five tabs. Interrupt with Ctrl+C to stop cleanly.
 
 import base64
 import json
+import os
 import re
 import signal
 import threading
@@ -58,6 +64,33 @@ PORT = 5000
 
 BACKEND = "http://127.0.0.1:4096"
 
+BACKEND_USER = "opencode"
+
+
+def backend_password():
+    """Password for the shared OpenCode V2 server (Basic auth). Resolution order:
+    $OPENCODE_SERVER_PASSWORD, then .server-password next to this file, then the
+    pinned default shared with the serve startup script."""
+    env = os.environ.get("OPENCODE_SERVER_PASSWORD")
+    if env:
+        return env
+    try:
+        p = Path(__file__).resolve().parent / ".server-password"
+        if p.exists():
+            v = p.read_text(encoding="utf-8").strip()
+            if v:
+                return v
+    except Exception:
+        pass
+    return "shared-chat-4096"
+
+
+def _auth_header():
+    """Authorization header for the V2 backend."""
+    tok = base64.b64encode(
+        (BACKEND_USER + ":" + backend_password()).encode("utf-8")).decode("ascii")
+    return {"Authorization": "Basic " + tok}
+
 SERVER_LABEL = "local"
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 
@@ -72,20 +105,23 @@ VIEWER_JS = Path(__file__).resolve().parent / "js" / "viewer.js"
 
 
 def fetch_models():
-    """Return all models available from the OpenCode backend. Returns an empty
-    list if the backend cannot be reached."""
+    """Return all models available from the OpenCode backend (V2 /api/model).
+    Each entry is {id: "provider/model", name}. Returns an empty list if the
+    backend cannot be reached."""
     try:
-        data = http_get_json("/config/providers")
-        providers = data.get("providers", []) if isinstance(data, dict) else data
+        data = http_get_json("/api/model")
+        items = data.get("data", []) if isinstance(data, dict) else data
         models = []
-        for p in providers:
-            pname = p.get("name", "")
-            for mid, m in (p.get("models", {}) or {}).items():
-                name = m.get("name", mid) if isinstance(m, dict) else mid
-                models.append({
-                    "id": (p.get("id", "") + "/" + mid),
-                    "name": (pname + ": " + name) if pname else name,
-                })
+        for m in items if isinstance(items, list) else []:
+            pid = m.get("providerID", "")
+            mid = m.get("modelID") or m.get("id", "")
+            name = m.get("name", mid)
+            if not (pid and mid):
+                continue
+            models.append({
+                "id": pid + "/" + mid,
+                "name": (pid + ": " + name) if pid else name,
+            })
         return models
     except Exception:
         return []
@@ -183,27 +219,45 @@ def safety_rewrite_url(location):
 
 def http_get_json(path):
     """GET a JSON endpoint from the backend."""
-    with urllib.request.urlopen(backend_url(path), timeout=30) as r:
+    req = urllib.request.Request(backend_url(path), headers=_auth_header())
+    with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def http_post_json(path, payload):
     """POST a JSON payload to the backend and return the JSON response."""
     data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    headers.update(_auth_header())
     req = urllib.request.Request(
-        backend_url(path), data=data,
-        headers={"Content-Type": "application/json"}, method="POST")
+        backend_url(path), data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=600) as r:
         raw = r.read()
         return json.loads(raw) if raw.strip() else {}
 
 
 def list_sessions():
-    """Return the list of open sessions from the backend."""
-    data = http_get_json("/session")
-    if isinstance(data, list):
-        return data
-    return data.get("sessions", data.get("items", []))
+    """Return the list of open sessions from the backend (V2 /api/session),
+    following pagination cursors and newest-first by default."""
+    acc = []
+    cursor = None
+    for _ in range(50):
+        path = "/api/session?limit=100&order=desc"
+        if cursor:
+            path += "&cursor=" + urllib.parse.quote(cursor)
+        try:
+            data = http_get_json(path)
+        except Exception:
+            break
+        items = data.get("data", []) if isinstance(data, dict) else []
+        if items:
+            acc.extend(items)
+        else:
+            break
+        cursor = (data.get("cursor") or {}).get("next") if isinstance(data, dict) else None
+        if not cursor:
+            break
+    return acc
 
 
 def default_session_id():
@@ -219,23 +273,40 @@ def default_session_id():
 
 def fetch_messages(session_id):
     """Flatten one session's backend messages into [{role, text}] for the user
-    and assistant roles only (the same view the chat UI shows). Uses the backend
-    /session/<id>/message endpoint, which is the one that reliably exists."""
-    try:
-        raw = http_get_json("/session/" + urllib.parse.quote(session_id) + "/message")
-    except Exception:
-        return []
-    if isinstance(raw, dict):
-        raw = raw.get("messages", [])
+    and assistant roles only (the same view the chat UI shows). V2 message shape:
+    user -> top-level text; assistant -> text parts inside content[]. Follows
+    pagination cursors so long transcripts are never truncated."""
+    raw = []
+    cursor = None
+    for _ in range(200):
+        path = ("/api/session/" + urllib.parse.quote(session_id)
+                + "/message?limit=100&order=asc")
+        if cursor:
+            path += "&cursor=" + urllib.parse.quote(cursor)
+        try:
+            data = http_get_json(path)
+        except Exception:
+            break
+        items = data.get("data", []) if isinstance(data, dict) else []
+        if items:
+            raw.extend(items)
+        else:
+            break
+        cursor = (data.get("cursor") or {}).get("next") if isinstance(data, dict) else None
+        if not cursor:
+            break
     msgs = []
     for m in raw if isinstance(raw, list) else []:
-        role = m.get("info", {}).get("role") or m.get("role")
-        parts = m.get("parts")
-        if isinstance(parts, list):
-            text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
-        else:
+        role = m.get("type")
+        if role == "user":
             text = m.get("text", "") or ""
-        if role in ("user", "assistant") and text.strip():
+        elif role == "assistant":
+            parts = m.get("content") or []
+            text = "".join(p.get("text", "") for p in parts
+                           if p.get("type") == "text")
+        else:
+            continue
+        if text.strip():
             msgs.append({"role": role, "text": text})
     return msgs
 
@@ -434,18 +505,59 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(("data: " + json.dumps(obj) + "\n\n").encode("utf-8"))
         self.wfile.flush()
 
+    def _assistant_done(self, sid):
+        """Poll GET /api/session/<id>/message for completion. Returns
+        (done, error, full_text): done becomes True once the newest assistant
+        message carries a completed timestamp. V2 does not broadcast a
+        completion event on /api/event, so this poll is the reliable signal."""
+        try:
+            data = http_get_json(
+                "/api/session/" + urllib.parse.quote(sid)
+                + "/message?limit=20&order=desc")
+        except Exception:
+            return False, None, None
+        msgs = data.get("data", []) if isinstance(data, dict) else data
+        if not isinstance(msgs, list):
+            return False, None, None
+        best = None
+        for m in msgs:
+            if m.get("type") != "assistant":
+                continue
+            created = (m.get("time") or {}).get("created") or 0
+            if best is None or created > best[0]:
+                best = (created, m)
+        if best is None:
+            return False, None, None
+        m = best[1]
+        if (m.get("time") or {}).get("completed"):
+            parts = m.get("content") or []
+            full = "".join(p.get("text", "") for p in parts
+                           if p.get("type") == "text")
+            return True, None, full
+        return False, None, None
+
     def _stream_chat(self, body):
-        """Bridge the frontend's /api/chat/stream to the OpenCode backend: create
-        or reuse a session, subscribe to the backend event stream, post the prompt,
-        and relay the assistant's text deltas as SSE to the browser."""
+        """Bridge the frontend's /api/chat/stream to the OpenCode V2 backend:
+        create or reuse a session (switching the session's model when reusing,
+        since V2 prompts carry no model), subscribe to /api/event, post the
+        prompt, relay session.text.delta as SSE, and poll the message endpoint
+        for completion."""
         try:
             provider, model = body["model"].split("/", 1)
+            model_ref = {"id": model, "providerID": provider, "variant": "default"}
             sid = body.get("session_id")
             new_session = body.get("new_session") is True
             if new_session:
-                sid = http_post_json("/session", {"title": body.get("title") or "Web chat"})["id"]
+                resp = http_post_json("/api/session", {
+                    "title": body.get("title") or "Web chat",
+                    "model": model_ref,
+                })
+                sid = resp.get("data", {}).get("id")
+                if not sid:
+                    raise RuntimeError("backend did not return a session id")
             elif not sid:
-                self._send_json({"error": "session_id required (or set new_session=true)"}, 400)
+                self._send_json(
+                    {"error": "session_id required (or set new_session=true)"}, 400)
                 return
         except Exception as e:
             self._send_json({"error": str(e)}, 502)
@@ -460,39 +572,69 @@ class Handler(BaseHTTPRequestHandler):
 
         events = None
         try:
+            # Reusing a session: set its model (battle mode alternates A/B).
+            if not new_session:
+                http_post_json(
+                    "/api/session/" + urllib.parse.quote(sid) + "/model",
+                    {"model": model_ref})
             # Subscribe to the backend event stream BEFORE posting the prompt.
-            events = urllib.request.urlopen(backend_url("/event"), timeout=600)
-            http_post_json("/session/" + urllib.parse.quote(sid) + "/prompt_async", {
-                "model": {"providerID": provider, "modelID": model},
-                "parts": [{"type": "text", "text": body["text"]}],
-            })
-            part_types = {}
-            for line in events:
-                line = line.strip()
-                if not line.startswith(b"data:"):
-                    continue
+            req = urllib.request.Request(
+                backend_url("/api/event"), headers=_auth_header())
+            events = urllib.request.urlopen(req, timeout=600)
+            try:
+                sock = events.fp.raw._sock if hasattr(events.fp, "raw") else None
+                if sock is not None:
+                    sock.settimeout(1.0)
+            except Exception:
+                pass
+            http_post_json(
+                "/api/session/" + urllib.parse.quote(sid) + "/prompt",
+                {"text": body["text"]})
+            emitted = ""
+            last_poll = 0.0
+            pending = b""
+            while True:
                 try:
-                    ev = json.loads(line[5:].decode("utf-8"))
-                except Exception:
-                    continue
-                props = ev.get("properties", {})
-                if props.get("sessionID") != sid:
-                    continue
-                if ev.get("type") == "message.part.updated":
-                    part = props.get("part", {})
-                    part_types[part.get("id")] = part.get("type")
-                elif (ev.get("type") == "message.part.delta"
-                      and props.get("field") == "text"
-                      and part_types.get(props.get("partID")) == "text"):
-                    self._sse({"delta": props.get("delta", "")})
-                elif ev.get("type") in ("session.idle", "session.error"):
-                    if ev.get("type") == "session.error":
-                        err = props.get("error")
-                        if isinstance(err, dict):
-                            err = err.get("message") or json.dumps(err)
-                        self._sse({"error": str(err)})
-                    self._sse({"done": True})
-                    return
+                    chunk = events.read(4096)
+                except (socket.timeout, TimeoutError, OSError):
+                    chunk = b""
+                if chunk:
+                    pending += chunk
+                while b"\n\n" in pending:
+                    block, pending = pending.split(b"\n\n", 1)
+                    line = block.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        ev = json.loads(line[5:].strip())
+                    except Exception:
+                        continue
+                    et = ev.get("type") or ""
+                    ed = ev.get("data") or {}
+                    if et == "session.text.delta" and ed.get("sessionID") == sid:
+                        d = ed.get("delta") or ""
+                        if d:
+                            emitted += d
+                            self._sse({"delta": d})
+                now = time.time()
+                if now - last_poll >= 0.5:
+                    last_poll = now
+                    done, err, full = self._assistant_done(sid)
+                    if err:
+                        self._sse({"error": err})
+                        self._sse({"done": True})
+                        return
+                    if done:
+                        if full and full != emitted:
+                            # Relay anything the poll caught but deltas missed.
+                            if full.startswith(emitted):
+                                self._sse({"delta": full[len(emitted):]})
+                            else:
+                                self._sse({"delta": full})
+                        self._sse({"done": True})
+                        return
+                if not chunk and not pending:
+                    time.sleep(0.1)
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:
@@ -522,6 +664,7 @@ class Handler(BaseHTTPRequestHandler):
             if k.lower() not in ("host", "connection", "content-length",
                                  "transfer-encoding", "accept-encoding")
         }
+        out_headers.update(_auth_header())
         req = urllib.request.Request(target, data=body, method=self.command,
                                      headers=out_headers)
         try:
@@ -622,7 +765,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 sid = body["session_id"]
                 req = urllib.request.Request(
-                    backend_url("/session/" + urllib.parse.quote(sid)), method="DELETE")
+                    backend_url("/api/session/" + urllib.parse.quote(sid)),
+                    method="DELETE", headers=_auth_header())
                 urllib.request.urlopen(req, timeout=600)
                 self._send_json({"ok": True})
             except Exception as e:
@@ -663,17 +807,20 @@ def wait_for_port(host, port, timeout=30):
 
 def start_backend():
     global _backend_proc
-    # Already running?
+    # Already running? (e.g. the persistent shared serve started externally)
     try:
         with socket.create_connection(("127.0.0.1", 4096), timeout=1):
             return True
     except OSError:
         pass
+    env = dict(os.environ)
+    env["OPENCODE_SERVER_PASSWORD"] = backend_password()
     try:
         _backend_proc = subprocess.Popen(
             ["opencode", "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
     except Exception as e:
         print("Failed to start opencode:", e)
