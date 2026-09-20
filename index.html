@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opencode Chat</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+    }
+
+    :root {
+      --code-bg: #26272e;
+      --code-border: #3a3b44;
+      --code-radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1e1f24;
+      color: #e6e6e6;
+      height: 100vh;
+      display: flex;
+    }
+
+    #sidebar {
+      width: 230px;
+      background: #17181c;
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      transition: margin-left .2s ease;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #sidebar.collapsed {
+      margin-left: -230px;
+    }
+
+    #sidebar h2 {
+      font-size: .85rem;
+      padding: .75rem 1rem .5rem;
+      opacity: .7;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+
+    #newchat {
+      margin: 0 .75rem .75rem;
+      background: #2f6fed;
+      border: none;
+      color: #fff;
+      border-radius: 6px;
+      padding: .5rem;
+      cursor: pointer;
+      font-size: .9rem;
+      white-space: nowrap;
+    }
+
+    #sessions {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .sess {
+      display: flex;
+      align-items: center;
+      padding: .5rem .4rem .5rem .9rem;
+      font-size: .85rem;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+    }
+
+    .sess:hover {
+      background: #2a2b31;
+    }
+
+    .sess.active {
+      background: #2a2b31;
+      border-left-color: #2f6fed;
+    }
+
+    .sess .label {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .sess small {
+      display: block;
+      opacity: .5;
+      font-size: .7rem;
+    }
+
+    .sess .del {
+      visibility: hidden;
+      background: none;
+      border: none;
+      color: #e6e6e6;
+      opacity: .5;
+      cursor: pointer;
+      font-size: .95rem;
+      padding: .1rem .35rem;
+      border-radius: 4px;
+    }
+
+    .sess:hover .del {
+      visibility: visible;
+    }
+
+    .sess .del:hover {
+      opacity: 1;
+      background: #5c2222;
+    }
+
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    header {
+      display: flex;
+      gap: .75rem;
+      align-items: center;
+      padding: .75rem 1rem;
+      background: #17181c;
+      border-bottom: 1px solid #333;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-right: auto;
+    }
+
+    #toggle {
+      font-size: 1.05rem;
+      padding: .3rem .55rem;
+    }
+
+    select,
+    button {
+      background: #2a2b31;
+      color: #e6e6e6;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: .4rem .6rem;
+      font-size: .9rem;
+    }
+
+    select {
+      max-width: 32vw;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    #status {
+      font-size: .8rem;
+      opacity: .7;
+    }
+
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+
+    .msg {
+      max-width: 80%;
+      padding: .6rem .9rem;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .user {
+      align-self: flex-end;
+      background: #2f6fed;
+    }
+
+    .assistant {
+      align-self: flex-start;
+      background: #2a2b31;
+    }
+
+    .error {
+      align-self: center;
+      background: #5c2222;
+      font-size: .85rem;
+    }
+
+    .msg .who {
+      display: block;
+      font-size: .7rem;
+      opacity: .6;
+      margin-bottom: .2rem;
+    }
+
+    .msg .content {
+      display: block;
+      min-width: 0;
+    }
+
+    .codeblock {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--code-radius);
+      padding: .6rem .8rem;
+      margin: .4rem 0;
+      font-family: var(--mono);
+      font-size: .85rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
+    .codeblock code {
+      font-family: inherit;
+      display: block;
+    }
+
+    #composer {
+      display: flex;
+      gap: .5rem;
+      padding: .75rem 1rem;
+      background: #17181c;
+      border-top: 1px solid #333;
+    }
+
+    #input {
+      flex: 1;
+      background: #2a2b31;
+      color: #e6e6e6;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: .6rem .8rem;
+      font-size: .95rem;
+      resize: none;
+      font-family: inherit;
+    }
+
+    /* ---------- Bot avatars ---------- */
+    #avatarbox {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      padding: .7rem 1rem 0;
+    }
+
+    .avatar-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .2rem;
+      width: 140px;
+    }
+
+    .avatar-unit .name {
+      font-size: .72rem;
+      opacity: .65;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .avatar-unit .caption {
+      min-height: 1.2em;
+      max-width: 100%;
+      font-size: .75rem;
+      opacity: .75;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .avatar {
+      width: 96px;
+      height: 96px;
+      transition: transform .3s ease;
+    }
+
+    .avatar .head {
+      fill: #26272e;
+      stroke: #3a3b44;
+      stroke-width: 2;
+      transition: stroke .3s;
+    }
+
+    .avatar .screen {
+      fill: #101116;
+    }
+
+    .avatar .eye {
+      fill: var(--eye, #6fa8ff);
+      transition: fill .3s;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .avatar .mouth {
+      fill: none;
+      stroke: var(--eye, #6fa8ff);
+      stroke-width: 3;
+      stroke-linecap: round;
+      transition: stroke .3s;
+    }
+
+    .avatar .antenna-tip {
+      fill: var(--eye, #6fa8ff);
+      transition: fill .3s;
+    }
+
+    .avatar .cheek {
+      fill: var(--eye, #6fa8ff);
+      opacity: .15;
+      transition: opacity .3s;
+    }
+
+    #avatarB {
+      --eye: #7ee2a8;
+    }
+
+    @keyframes blink {
+
+      0%,
+      92%,
+      100% {
+        transform: scaleY(1);
+      }
+
+      96% {
+        transform: scaleY(.1);
+      }
+    }
+
+    @keyframes bob {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-3px);
+      }
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .35;
+      }
+    }
+
+    @keyframes talk {
+
+      0%,
+      100% {
+        d: path("M44 74 Q55 80 66 74");
+      }
+
+      50% {
+        d: path("M44 73 Q55 86 66 73");
+      }
+    }
+
+    @keyframes lookaround {
+
+      0%,
+      40%,
+      100% {
+        transform: translateX(0);
+      }
+
+      50%,
+      90% {
+        transform: translateX(3px);
+      }
+    }
+
+    .avatar[data-state="idle"] {
+      animation: bob 4s ease-in-out infinite;
+    }
+
+    .avatar[data-state="idle"] .eye {
+      animation: blink 4.5s infinite;
+    }
+
+    .avatar[data-state="thinking"] .antenna-tip {
+      fill: #f7c948;
+      animation: pulse .8s infinite;
+    }
+
+    .avatar[data-state="thinking"] .eye {
+      fill: #f7c948;
+      animation: lookaround 1.6s ease-in-out infinite;
+    }
+
+    .avatar[data-state="thinking"] .mouth {
+      stroke: #f7c948;
+    }
+
+    .avatar[data-state="speaking"] {
+      transform: scale(1.03);
+    }
+
+    .avatar[data-state="speaking"] .mouth {
+      animation: talk .35s linear infinite;
+    }
+
+    .avatar[data-state="speaking"] .cheek {
+      opacity: .35;
+    }
+
+    .avatar[data-state="error"] .eye {
+      fill: #ff6b6b;
+    }
+
+    .avatar[data-state="error"] .mouth {
+      stroke: #ff6b6b;
+      d: path("M44 78 Q49 74 54 78 Q59 82 66 76");
+    }
+
+    .avatar[data-state="error"] .head {
+      stroke: #ff6b6b;
+    }
+
+    .avatar[data-state="error"] .antenna-tip {
+      fill: #ff6b6b;
+      animation: pulse .5s infinite;
+    }
+
+    #battle {
+      border-color: #8a63d2;
+    }
+
+    #battle.on {
+      background: #8a63d2;
+      color: #fff;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="sidebar">
+    <button id="newchat">+ New chat</button>
+    <h2>History</h2>
+    <div id="sessions"></div>
+  </div>
+  <div id="main">
+    <header>
+      <button id="toggle" title="Toggle sidebar">☰</button>
+      <h1>Opencode Chat</h1>
+      <span id="status">loading models…</span>
+      <label>🤖 <select id="modelA"></select></label>
+      <label>🤖 <select id="modelB"></select></label>
+      <button id="battle" title="Bot battle mode: the two bots talk to each other">⚔ Battle</button>
+    </header>
+    <div id="avatarbox">
+      <div class="avatar-unit">
+        <svg class="avatar" id="avatarA" data-state="idle" viewBox="0 0 110 110" aria-label="Bot A avatar">
+          <line x1="55" y1="14" x2="55" y2="26" stroke="#3a3b44" stroke-width="3" />
+          <circle class="antenna-tip" cx="55" cy="10" r="5" />
+          <rect class="head" x="15" y="26" width="80" height="66" rx="20" />
+          <rect class="screen" x="25" y="36" width="60" height="46" rx="12" />
+          <circle class="eye" cx="42" cy="56" r="5.5" />
+          <circle class="eye" cx="68" cy="56" r="5.5" />
+          <path class="mouth" d="M44 74 Q55 80 66 74" />
+          <circle class="cheek" cx="34" cy="68" r="4.5" />
+          <circle class="cheek" cx="76" cy="68" r="4.5" />
+        </svg>
+        <div class="name" id="nameA">Bot A</div>
+        <div class="caption" id="capA"></div>
+      </div>
+      <div class="avatar-unit">
+        <svg class="avatar" id="avatarB" data-state="idle" viewBox="0 0 110 110" aria-label="Bot B avatar">
+          <line x1="55" y1="14" x2="55" y2="26" stroke="#3a3b44" stroke-width="3" />
+          <circle class="antenna-tip" cx="55" cy="10" r="5" />
+          <rect class="head" x="15" y="26" width="80" height="66" rx="20" />
+          <rect class="screen" x="25" y="36" width="60" height="46" rx="12" />
+          <circle class="eye" cx="42" cy="56" r="5.5" />
+          <circle class="eye" cx="68" cy="56" r="5.5" />
+          <path class="mouth" d="M44 74 Q55 80 66 74" />
+          <circle class="cheek" cx="34" cy="68" r="4.5" />
+          <circle class="cheek" cx="76" cy="68" r="4.5" />
+        </svg>
+        <div class="name" id="nameB">Bot B</div>
+        <div class="caption" id="capB"></div>
+      </div>
+    </div>
+    <div id="chat"></div>
+    <div id="composer">
+      <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
+      <button id="send">Send</button>
+      <button id="stop" style="display:none">Stop</button>
+    </div>
+  </div>
+  <script>
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('input');
+    const modelA = document.getElementById('modelA');
+    const modelB = document.getElementById('modelB');
+    const statusEl = document.getElementById('status');
+    const sessionsEl = document.getElementById('sessions');
+    const sidebar = document.getElementById('sidebar');
+    const battleBtn = document.getElementById('battle');
+    const sendBtn = document.getElementById('send');
+    const stopBtn = document.getElementById('stop');
+
+    let sessionId = localStorage.getItem('oc-chat-session') || null;   // your chat with Bot A
+    let battleSession = null;               // ONE shared battle-mode session (no per-bot fork)
+    let activeController = null;            // in-flight stream's AbortController (Stop can cancel it)
+    let busy = false;
+    let battleMode = false;
+    let battleAbort = false;
+
+    /* ---------- Avatar component factory ---------- */
+    function makeAvatar(el, captionEl) {
+      const STATES = ['idle', 'thinking', 'speaking', 'error'];
+      let errorTimer = null;
+      return {
+        setState(s) {
+          if (!STATES.includes(s)) return;
+          clearTimeout(errorTimer);
+          el.dataset.state = s;
+          if (s === 'thinking') captionEl.textContent = '';
+          if (s === 'error') errorTimer = setTimeout(() => this.setState('idle'), 4000);
+        },
+        setMessage(text) {
+          captionEl.textContent = text || '';
+          captionEl.title = text || '';
+        },
+        get state() { return el.dataset.state; }
+      };
+    }
+    const avatarA = makeAvatar(document.getElementById('avatarA'), document.getElementById('capA'));
+    const avatarB = makeAvatar(document.getElementById('avatarB'), document.getElementById('capB'));
+
+    /* ---------- Model dropdowns ---------- */
+    async function loadModels() {
+      try {
+        const r = await fetch('/api/models');
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        for (const sel of [modelA, modelB]) {
+          sel.innerHTML = '';
+          for (const m of data.models) {
+            const o = document.createElement('option');
+            o.value = m.id;
+            o.textContent = m.name;
+            sel.appendChild(o);
+          }
+        }
+        const savedA = localStorage.getItem('oc-chat-model');
+        const savedB = localStorage.getItem('oc-chat-model-b');
+        modelA.value = savedA || 'nvidia/deepseek-ai/deepseek-v4-flash-0731';   // Bot A: DeepSeek V4 Flash 0731
+        modelB.value = savedB || 'opencode/big-pickle';                          // Bot B: Big Pickle
+        for (const sel of [modelA, modelB]) {
+          if (![...sel.options].some(o => o.value === sel.value)) {
+            sel.selectedIndex = sel.selectedIndex === 0 && sel.options.length > 1 ? 1 : 0;
+          }
+        }
+        updateNames();
+        statusEl.textContent = data.models.length ? '' : 'no models found in opencode';
+      } catch (e) {
+        statusEl.textContent = 'models failed to load: ' + e.message;
+      }
+    }
+
+    function shortName(sel) {
+      const t = sel.options[sel.selectedIndex]?.textContent || '?';
+      return t.replace(/^[^:]+:\s*/, '');   // strip provider prefix
+    }
+    function updateNames() {
+      document.getElementById('nameA').textContent = 'A: ' + shortName(modelA);
+      document.getElementById('nameB').textContent = 'B: ' + shortName(modelB);
+    }
+    modelA.onchange = () => { localStorage.setItem('oc-chat-model', modelA.value); updateNames(); };
+    modelB.onchange = () => { localStorage.setItem('oc-chat-model-b', modelB.value); updateNames(); };
+
+    /* ---------- Sidebar ---------- */
+    async function loadSessions() {
+      try {
+        const r = await fetch('/api/sessions');
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        sessionsEl.innerHTML = '';
+        for (const s of data.sessions) {
+          const d = document.createElement('div');
+          d.className = 'sess' + (s.id === sessionId ? ' active' : '');
+          const label = document.createElement('div');
+          label.className = 'label';
+          label.append(document.createTextNode(s.title));
+          const sm = document.createElement('small');
+          sm.textContent = new Date(s.updated).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+          label.append(sm);
+          label.title = s.title;
+          label.onclick = () => openSession(s.id);
+          const del = document.createElement('button');
+          del.className = 'del';
+          del.textContent = '✕';
+          del.title = 'Delete this chat';
+          del.onclick = e => { e.stopPropagation(); deleteSession(s.id, s.title); };
+          d.append(label, del);
+          sessionsEl.appendChild(d);
+        }
+      } catch (e) { /* leave sidebar as-is */ }
+    }
+
+    async function deleteSession(sid, title) {
+      if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+      try {
+        const r = await fetch('/api/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sid })
+        });
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        if (sid === sessionId) {
+          sessionId = null;
+          localStorage.removeItem('oc-chat-session');
+          chat.innerHTML = '';
+        }
+        loadSessions();
+      } catch (e) {
+        addMsg('error', 'Delete failed: ' + e.message);
+      }
+    }
+
+    async function openSession(sid) {
+      if (busy) return;
+      sessionId = sid;
+      localStorage.setItem('oc-chat-session', sid);
+      chat.innerHTML = '';
+      loadSessions();
+      try {
+        const r = await fetch('/api/history?session_id=' + encodeURIComponent(sid));
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        const frag = document.createDocumentFragment();   // batch builds to avoid layout thrashing
+        for (const m of data.messages) frag.append(makeMsg(m.role, m.text));
+        chat.append(frag);
+        chat.scrollTop = chat.scrollHeight;
+      } catch (e) {
+        addMsg('error', 'Could not load history: ' + e.message);
+      }
+    }
+
+    /* Pure, XSS-safe renderer. Escapes first, then does a line-based fence scan:
+       - a line starting with ``` (optionally a language tag) opens a code block;
+       - a following bare ``` line closes it (leading/trailing whitespace tolerated);
+       - content lines starting with ``` toggle state; other ```-containing lines stay
+         as code content (nested-safe);
+       - a never-closed fence degrades to a code block for the remainder (malformed-safe).
+       Newlines are preserved by CSS white-space:pre-wrap. */
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderContent(text) {
+      const esc = escapeHtml(text);
+      const lines = esc.split('\n');
+      let html = '', inCode = false, buf = [];
+      for (const line of lines) {
+        const fence = line.match(/^\s*```(.*?)\s*$/);
+        if (fence) {
+          if (inCode) {                       // closer
+            inCode = false;
+            html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
+            buf = [];
+          } else {                            // opener (language tag in fence[1] is ignored)
+            inCode = true;
+          }
+          continue;
+        }
+        if (inCode) buf.push(line);
+        else html += line + '\n';
+      }
+      if (inCode) {                           // unclosed fence: render the remainder as code
+        html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
+      }
+      return html || '…';
+    }
+
+    /* Builds a message bubble element WITHOUT appending it (used by reload batching). */
+    function makeMsg(role, text, who) {
+      const d = document.createElement('div');
+      d.className = 'msg ' + role;
+      if (who) {
+        const w = document.createElement('span');
+        w.className = 'who';
+        w.textContent = who;
+        d.append(w);
+      }
+      const c = document.createElement('div');
+      c.className = 'content';
+      c.innerHTML = renderContent(text);
+      d._content = c;
+      d.append(c);
+      return d;
+    }
+
+    function addMsg(role, text, who) {
+      const d = makeMsg(role, text, who);
+      chat.appendChild(d);
+      chat.scrollTop = chat.scrollHeight;
+      return d;
+    }
+
+    /* ---------- Core streaming call ---------- */
+    /* Streams one reply for `model` into a new bubble; returns {text, session_id, error}.
+       Uses an AbortController so ⚔ Stop can cancel the fetch immediately; renderContent()
+       is rAF-debounced to at most one DOM write per frame. */
+    async function streamReply({ model, text, session_id, new_session, avatar, who, title }) {
+      avatar.setState('thinking');
+      const bubble = addMsg('assistant', '…', who);
+      const ac = new AbortController();
+      activeController = ac;
+      const timer = setTimeout(() => ac.abort(), 180000);   // never hang forever on one turn
+      let raf = 0;
+      try {
+        const r = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, text, session_id, new_session, title }),
+          signal: ac.signal
+        });
+        if (!r.ok) throw new Error((await r.text()) || ('HTTP ' + r.status));
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let out = '', buf = '', sid = session_id;
+        for (; ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            let ev;
+            try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+            if (ev.session_id) sid = ev.session_id;
+            if (ev.error) throw new Error(ev.error);
+            if (ev.delta) {
+              if (!out) avatar.setState('speaking');
+              out += ev.delta;
+              if (!raf) raf = requestAnimationFrame(() => {
+                raf = 0;
+                bubble._content.innerHTML = renderContent(out);
+                chat.scrollTop = chat.scrollHeight;   // scroll anchoring
+              });
+            }
+          }
+        }
+        if (raf) cancelAnimationFrame(raf);
+        bubble._content.innerHTML = renderContent(out || '(empty reply)');
+        avatar.setMessage(out.slice(0, 120));
+        avatar.setState('idle');
+        return { text: out, session_id: sid, error: null };
+      } catch (e) {
+        if (raf) cancelAnimationFrame(raf);
+        if (battleAbort) {   // user stopped: clean exit, no error bubble, session preserved
+          bubble._content.innerHTML = renderContent('(stopped)');
+          avatar.setState('idle');
+          return { text: '', session_id, error: null };
+        }
+        const msg = (e && e.message) ? e.message : 'Request failed';
+        bubble.className = 'msg error';             // surface server/provider errors visibly
+        bubble._content.innerHTML = renderContent(msg);
+        avatar.setState('error');
+        avatar.setMessage(msg.slice(0, 80));
+        return { text: '', session_id, error: msg };
+      } finally {
+        clearTimeout(timer);
+        if (activeController === ac) activeController = null;
+      }
+    }
+
+    /* ---------- You chat with Bot A ---------- */
+    async function send() {
+      const text = input.value.trim();
+      if (!text || busy || !modelA.value) return;
+      busy = true;
+      input.value = '';
+      localStorage.setItem('oc-chat-model', modelA.value);
+      addMsg('user', text);
+      try {
+        const res = await streamReply({
+          model: modelA.value, text, session_id: sessionId, new_session: sessionId == null,
+          avatar: avatarA, who: shortName(modelA), title: 'Web chat'
+        });
+        if (!res.error) {   // only advance the session on success; errors are shown in-bubble
+          sessionId = res.session_id;
+          localStorage.setItem('oc-chat-session', sessionId);
+        }
+        loadSessions();
+      } catch (e) {
+        addMsg('error', 'Error: ' + e.message);
+        avatarA.setState('error');
+        avatarA.setMessage(e.message.slice(0, 80));
+      }
+      busy = false;
+      input.focus();
+    }
+
+    /* ---------- Bot battle: A and B talk to each other ---------- */
+    const MAX_BATTLE_TURNS = 100;   // hard safety cap only; battle otherwise runs until agreement/stop
+
+    async function startBattle() {
+      const topic = input.value.trim() || 'Debate: is the tune feature-tagged "Opencode Chat" the best way to chat with AI?';
+      if (busy) return;
+      busy = true;
+      battleAbort = false;
+      battleSession = null;         // each battle = ONE fresh unified session
+      input.value = '';
+      sendBtn.style.display = 'none';
+      stopBtn.style.display = '';
+      avatarA.setState('idle');
+      avatarB.setState('idle');
+      addMsg('user', '⚔ Battle topic: ' + topic, 'You (referee)');
+      const sys = n => `You are bot ${n} in a friendly two-bot chat for a human audience. Topic: "${topic}". Keep each reply short (2-4 sentences), casual, and respond directly to the other bot. No emojis. When you genuinely agree with the other bot, END your reply with the single token "[AGREED]" and nothing after it.`;
+      let lastMsg = `Start the conversation. ${sys('A')}`;
+      try {
+        for (let i = 0; i < MAX_BATTLE_TURNS && !battleAbort; i++) {
+          const aTurn = i % 2 === 0;
+          const res = await streamReply({
+            model: aTurn ? modelA.value : modelB.value,
+            text: lastMsg,
+            session_id: battleSession,
+            new_session: i === 0,               // create the ONE session on turn 0 only
+            avatar: aTurn ? avatarA : avatarB,
+            who: (aTurn ? 'A: ' : 'B: ') + shortName(aTurn ? modelA : modelB),
+            title: 'Bot battle'
+          });
+          if (res.error) break;                 // server/provider error surfaced in the bubble
+          if (!res.session_id) throw new Error('lost session id on turn ' + i);
+          battleSession = res.session_id;       // reuse the same session for every later turn
+          const agreed = /\[agreed\]/i.test(res.text);
+          const cleanText = res.text.replace(/\[agreed\]/ig, '').trim();
+          lastMsg = cleanText + (i < MAX_BATTLE_TURNS - 1
+            ? `\n\n---\n${sys(aTurn ? 'B' : 'A')} Reply to that.` : '');
+          if (agreed) {
+            addMsg('assistant', '🤝 The bots reached an agreement.', 'Referee');
+            break;
+          }
+          if (!res.text) break;                 // empty reply ends the battle
+        }
+      } catch (e) {
+        addMsg('error', 'Battle error: ' + e.message);
+        avatarA.setState('error');
+        avatarB.setState('error');
+      }
+      battleAbort = false;
+      busy = false;
+      sendBtn.style.display = '';
+      stopBtn.style.display = 'none';
+      loadSessions();
+    }
+
+    /* ---------- Wiring ---------- */
+    sendBtn.onclick = () => battleMode ? startBattle() : send();
+    stopBtn.onclick = () => {
+      if (!busy) return;   // no active stream to stop
+      battleAbort = true;
+      if (activeController) activeController.abort();   // immediately cancel the active fetch/SSE
+    };
+    battleBtn.onclick = () => {
+      if (busy) return;   // don't toggle battle mode while a stream is active
+      battleMode = !battleMode;
+      battleBtn.classList.toggle('on', battleMode);
+      input.placeholder = battleMode
+        ? 'Give the bots a topic, then press Enter/Start…'
+        : 'Type a message… (Enter to send, Shift+Enter for newline)';
+      sendBtn.textContent = battleMode ? 'Start' : 'Send';
+    };
+    document.getElementById('newchat').onclick = () => {
+      if (busy) return;   // don't start a new chat while a stream is active
+      sessionId = null;
+      localStorage.removeItem('oc-chat-session');
+      chat.innerHTML = '';
+      loadSessions();
+      input.focus();
+    };
+    document.getElementById('toggle').onclick = () => {
+      sidebar.classList.toggle('collapsed');
+      localStorage.setItem('oc-chat-sidebar', sidebar.classList.contains('collapsed') ? '0' : '1');
+    };
+    if (localStorage.getItem('oc-chat-sidebar') === '0') sidebar.classList.add('collapsed');
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+    });
+
+    loadModels();
+    loadSessions();
+    if (sessionId) openSession(sessionId);
+  </script>
+</body>
+
+</html>
