@@ -14,6 +14,9 @@ Endpoints:
   GET  /tabs/multiplex                 multiplex (iframes) viewer
   GET  /debug                          debug dashboard
   GET  /server/<b64>/session/<id>      backend session viewer
+  GET  /css/styles.css                 chat frontend stylesheet
+  GET  /js/app.js                      chat frontend script
+  GET  /js/viewer.js                   shared message renderer for chat + viewers
   GET  /models, /api/models            all models available from the backend
   GET  /api/tabs/full                  all tabs with full transcripts
   GET  /api/tab/<id>/html              tab snapshot (title, url, messages)
@@ -63,7 +66,9 @@ _PROXY_NETLOC = f"{HOST}:{PORT}"
 _BACKEND_NETLOC = "127.0.0.1:4096"
 
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
-VIEWER_JS = Path(__file__).resolve().parent / "viewer.js"
+CSS_FILE = Path(__file__).resolve().parent / "css" / "styles.css"
+APP_JS = Path(__file__).resolve().parent / "js" / "app.js"
+VIEWER_JS = Path(__file__).resolve().parent / "js" / "viewer.js"
 
 
 def fetch_models():
@@ -379,6 +384,12 @@ def page_backend_viewer(session_id):
 # HTTP handler: routes + backend forwarding.
 # ---------------------------------------------------------------------------
 
+STATIC = {
+    "/css/styles.css": (CSS_FILE, "text/css; charset=utf-8"),
+    "/js/app.js": (APP_JS, "application/javascript; charset=utf-8"),
+    "/js/viewer.js": (VIEWER_JS, "application/javascript; charset=utf-8"),
+}
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "OpenCodeUnified/1.0"
 
@@ -543,8 +554,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 self._send_file(str(INDEX_HTML))
-            elif path == "/js/viewer.js":
-                self._send_file(str(VIEWER_JS), "application/javascript; charset=utf-8")
+            elif path in STATIC:
+                _file, _ctype = STATIC[path]
+                self._send_file(str(_file), _ctype)
             elif path in ("/models", "/api/models"):
                 self._send_json({"models": fetch_models()})
             elif path == "/api/sessions":

@@ -1,0 +1,456 @@
+/* Opencode Chat — chat frontend styles.
+   Served at /css/styles.css by server.py. */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+:root {
+  --code-bg: #26272e;
+  --code-border: #3a3b44;
+  --code-radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background: #1e1f24;
+  color: #e6e6e6;
+  height: 100vh;
+  display: flex;
+}
+
+#sidebar {
+  width: 230px;
+  background: #17181c;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  transition: margin-left .2s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#sidebar.collapsed {
+  margin-left: -230px;
+}
+
+#sidebar h2 {
+  font-size: .85rem;
+  padding: .75rem 1rem .5rem;
+  opacity: .7;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+#newchat {
+  margin: 0 .75rem .75rem;
+  background: #2f6fed;
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  padding: .5rem;
+  cursor: pointer;
+  font-size: .9rem;
+  white-space: nowrap;
+}
+
+#sessions {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sess {
+  display: flex;
+  align-items: center;
+  padding: .5rem .4rem .5rem .9rem;
+  font-size: .85rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+
+.sess:hover {
+  background: #2a2b31;
+}
+
+.sess.active {
+  background: #2a2b31;
+  border-left-color: #2f6fed;
+}
+
+.sess .label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sess small {
+  display: block;
+  opacity: .5;
+  font-size: .7rem;
+}
+
+.sess .del {
+  visibility: hidden;
+  background: none;
+  border: none;
+  color: #e6e6e6;
+  opacity: .5;
+  cursor: pointer;
+  font-size: .95rem;
+  padding: .1rem .35rem;
+  border-radius: 4px;
+}
+
+.sess:hover .del {
+  visibility: visible;
+}
+
+.sess .del:hover {
+  opacity: 1;
+  background: #5c2222;
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+header {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  padding: .75rem 1rem;
+  background: #17181c;
+  border-bottom: 1px solid #333;
+}
+
+header h1 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+#toggle {
+  font-size: 1.05rem;
+  padding: .3rem .55rem;
+}
+
+select,
+button {
+  background: #2a2b31;
+  color: #e6e6e6;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: .4rem .6rem;
+  font-size: .9rem;
+}
+
+select {
+  max-width: 32vw;
+}
+
+button {
+  cursor: pointer;
+}
+
+#status {
+  font-size: .8rem;
+  opacity: .7;
+}
+
+#chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.msg {
+  max-width: 80%;
+  padding: .6rem .9rem;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.user {
+  align-self: flex-end;
+  background: #2f6fed;
+}
+
+.assistant {
+  align-self: flex-start;
+  background: #2a2b31;
+}
+
+.error {
+  align-self: center;
+  background: #5c2222;
+  font-size: .85rem;
+}
+
+.msg .who {
+  display: block;
+  font-size: .7rem;
+  opacity: .6;
+  margin-bottom: .2rem;
+}
+
+.msg .content {
+  display: block;
+  min-width: 0;
+}
+
+.codeblock {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--code-radius);
+  padding: .6rem .8rem;
+  margin: .4rem 0;
+  font-family: var(--mono);
+  font-size: .85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.codeblock code {
+  font-family: inherit;
+  display: block;
+}
+
+#composer {
+  display: flex;
+  gap: .5rem;
+  padding: .75rem 1rem;
+  background: #17181c;
+  border-top: 1px solid #333;
+}
+
+#input {
+  flex: 1;
+  background: #2a2b31;
+  color: #e6e6e6;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: .6rem .8rem;
+  font-size: .95rem;
+  resize: none;
+  font-family: inherit;
+}
+
+/* ---------- Bot avatars ---------- */
+#avatarbox {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: .7rem 1rem 0;
+}
+
+.avatar-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .2rem;
+  width: 140px;
+}
+
+.avatar-unit .name {
+  font-size: .72rem;
+  opacity: .65;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.avatar-unit .caption {
+  min-height: 1.2em;
+  max-width: 100%;
+  font-size: .75rem;
+  opacity: .75;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.avatar {
+  width: 96px;
+  height: 96px;
+  transition: transform .3s ease;
+}
+
+.avatar .head {
+  fill: #26272e;
+  stroke: #3a3b44;
+  stroke-width: 2;
+  transition: stroke .3s;
+}
+
+.avatar .screen {
+  fill: #101116;
+}
+
+.avatar .eye {
+  fill: var(--eye, #6fa8ff);
+  transition: fill .3s;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.avatar .mouth {
+  fill: none;
+  stroke: var(--eye, #6fa8ff);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke .3s;
+}
+
+.avatar .antenna-tip {
+  fill: var(--eye, #6fa8ff);
+  transition: fill .3s;
+}
+
+.avatar .cheek {
+  fill: var(--eye, #6fa8ff);
+  opacity: .15;
+  transition: opacity .3s;
+}
+
+#avatarB {
+  --eye: #7ee2a8;
+}
+
+@keyframes blink {
+
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  96% {
+    transform: scaleY(.1);
+  }
+}
+
+@keyframes bob {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: .35;
+  }
+}
+
+@keyframes talk {
+
+  0%,
+  100% {
+    d: path("M44 74 Q55 80 66 74");
+  }
+
+  50% {
+    d: path("M44 73 Q55 86 66 73");
+  }
+}
+
+@keyframes lookaround {
+
+  0%,
+  40%,
+  100% {
+    transform: translateX(0);
+  }
+
+  50%,
+  90% {
+    transform: translateX(3px);
+  }
+}
+
+.avatar[data-state="idle"] {
+  animation: bob 4s ease-in-out infinite;
+}
+
+.avatar[data-state="idle"] .eye {
+  animation: blink 4.5s infinite;
+}
+
+.avatar[data-state="thinking"] .antenna-tip {
+  fill: #f7c948;
+  animation: pulse .8s infinite;
+}
+
+.avatar[data-state="thinking"] .eye {
+  fill: #f7c948;
+  animation: lookaround 1.6s ease-in-out infinite;
+}
+
+.avatar[data-state="thinking"] .mouth {
+  stroke: #f7c948;
+}
+
+.avatar[data-state="speaking"] {
+  transform: scale(1.03);
+}
+
+.avatar[data-state="speaking"] .mouth {
+  animation: talk .35s linear infinite;
+}
+
+.avatar[data-state="speaking"] .cheek {
+  opacity: .35;
+}
+
+.avatar[data-state="error"] .eye {
+  fill: #ff6b6b;
+}
+
+.avatar[data-state="error"] .mouth {
+  stroke: #ff6b6b;
+  d: path("M44 78 Q49 74 54 78 Q59 82 66 76");
+}
+
+.avatar[data-state="error"] .head {
+  stroke: #ff6b6b;
+}
+
+.avatar[data-state="error"] .antenna-tip {
+  fill: #ff6b6b;
+  animation: pulse .5s infinite;
+}
+
+#battle {
+  border-color: #8a63d2;
+}
+
+#battle.on {
+  background: #8a63d2;
+  color: #fff;
+}

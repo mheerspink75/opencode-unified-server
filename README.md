@@ -1,8 +1,10 @@
 # Opencode Unified Server
 
-A single-file server that combines the OpenCode chat frontend (with two-bot battle),
-the backend session viewer, proxy pages, auto-refresh, and multi-tab debugging.
-Everything runs from one Python file on port 5000 with no second process.
+A single-file Python server that combines the OpenCode chat frontend (with
+two-bot battle), the backend session viewer, proxy pages, auto-refresh, and
+multi-tab debugging. Everything runs from one Python file on port 5000 with no
+second process; the frontend's styles and scripts are split into `css/` and
+`js/` (see the file layout below).
 
 ## How it works
 
@@ -10,8 +12,9 @@ Everything runs from one Python file on port 5000 with no second process.
 browser  →  server.py (127.0.0.1:5000)  →  opencode serve (127.0.0.1:4096)  →  your AI providers
 ```
 
-- `server.py` serves the chat frontend (`index.html`), the tabs/multiplex/debug
-  viewers, the backend session viewer, and several JSON API endpoints.
+- `server.py` serves the chat frontend (`index.html` plus `css/styles.css`,
+  `js/app.js`, `js/viewer.js`), the tabs/multiplex/debug viewers, the backend
+  session viewer, and several JSON API endpoints.
 - Requests that do not match the built-in routes are forwarded to `opencode serve`,
   which handles all providers/models from your opencode setup (OpenCode Zen,
   NVIDIA, GitHub Copilot, etc.).
@@ -20,6 +23,21 @@ browser  →  server.py (127.0.0.1:5000)  →  opencode serve (127.0.0.1:4096)  
 - All viewer pages **auto-refresh every 2 seconds**, use absolute URLs only (port
   always present, no `//`, no relative fetches), and are fully self-contained with
   no client-side state. Output is deterministic (no randomness, no timestamps).
+
+## File layout
+
+```
+bot_battle_chat/
+├── server.py       # the entire server (routing, APIs, proxy, backend bridge)
+├── index.html      # chat frontend markup (HTML only)
+├── css/
+│   └── styles.css  # chat frontend styles
+├── js/
+│   ├── app.js      # chat frontend application logic
+│   └── viewer.js   # shared message renderer (chat page + viewer pages)
+├── diag.sh         # bash diagnostics
+└── README.md
+```
 
 ## Requirements
 
@@ -70,7 +88,7 @@ avatar:
 
 Two robot avatars (A blue, B green) react to the conversation pipeline
 (user → server → opencode → server → avatar). Each has its own state via
-`makeAvatar(svgEl, captionEl)` instances (`avatarA` / `avatarB` in `index.html`):
+`makeAvatar(svgEl, captionEl)` instances (`avatarA` / `avatarB` in `js/app.js`):
 
 | State        | When                                    | Look                                                   |
 | ------------ | --------------------------------------- | ------------------------------------------------------ |
@@ -79,7 +97,7 @@ Two robot avatars (A blue, B green) react to the conversation pipeline
 | `speaking` | Tokens streaming in                     | Animated mouth, glowing cheeks                         |
 | `error`    | Request failed                          | Red eyes, wavy frown (auto-recovers to idle after 4 s) |
 
-Front-end API (`avatarA` / `avatarB` objects in `index.html`):
+Front-end API (`avatarA` / `avatarB` objects in `js/app.js`):
 
 ```js
 avatarA.setState("idle" | "thinking" | "speaking" | "error");
@@ -103,6 +121,14 @@ HTML pages:
 | GET    | `/tabs/multiplex`            | Multiplex (iframe) viewer (auto-refresh every 2 s) |
 | GET    | `/debug`                     | Debug dashboard (auto-refresh every 2 s)           |
 | GET    | `/server/<b64>/session/<id>` | Backend session viewer (auto-refresh every 2 s)    |
+
+Static files (the chat frontend splits styles and scripts into these):
+
+| Method | Path              | Description                   |
+| ------ | ----------------- | ----------------------------- |
+| GET    | `/css/styles.css` | Chat frontend stylesheet      |
+| GET    | `/js/app.js`      | Chat frontend application JS  |
+| GET    | `/js/viewer.js`   | Shared message renderer (chat and viewer pages) |
 
 JSON API:
 

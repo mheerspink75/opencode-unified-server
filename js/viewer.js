@@ -1,7 +1,8 @@
-/* Shared message-rendering helpers for the chat UI (index.html) and the viewer
-   pages (/tabs, /debug, ...). Single source of truth for escapeHtml,
-   renderContent and bubbles; viewer pages inline this file server-side and the
-   chat page loads it as /js/viewer.js.
+/* Shared message-rendering helpers for the chat UI (index.html -> app.js) and
+   the viewer pages (/tabs, /debug, ...). Single source of truth for
+   escapeHtml, renderContent and bubbles; viewer pages inline this file
+   server-side (PAGE_JS in server.py) and the chat page loads it as
+   /js/viewer.js before /js/app.js.
 
    Rendering pipeline: escape first, then a line-based fence scan:
    - a line starting with ``` (optionally a language tag) opens a code block;
