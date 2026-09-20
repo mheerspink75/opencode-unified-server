@@ -202,3 +202,11 @@ headers preserved; redirects are rewritten to stay on port 5000.
   terminal where `server.py` runs and the provider status.
 - **Stale behavior after editing code** — restart `server.py` (a running instance
   keeps the old code loaded).
+
+## Desktop follow (no popup)
+
+Point the Desktop app at **http://127.0.0.1:5000** — server.py authenticates to
+the shared serve (127.0.0.1:4096, Basic opencode:*<pin>* injected internally) so
+the page renders with **no credential popup**. Pointing the Desktop directly at
+**:4096** makes its WebView2 engine blank the Basic-auth dialog (engine can't
+paint it — Edge renders it fine; CLI/curl authenticate with the same pair).
