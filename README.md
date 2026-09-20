@@ -61,6 +61,51 @@ sessions — start a chat on one side and continue it on the other.
 > (`GET /api/experimental/session/{id}/export` →
 > `POST /api/experimental/session/import`).
 
+## Start / stop (quick reference)
+
+Run every line from this directory (`cd ~/nvidia/bot_battle_chat`). The password
+persists across restarts (`.server-password`, gitignored) — the same secret every
+client keeps using, so a restart never re-prompts or re-picks.
+
+**Start** (two pieces, order matters — backend first, proxy second):
+
+```bash
+# 1) shared serve on 4096 — authoritative backend, pinned password
+bash start_shared_serve.sh
+
+# 2) Desktop-follow proxy on 5000 — no auth challenge of its own; it injects
+#    the pinned credential toward :4096 internally, so the Desktop renders with
+#    no popup
+nohup python3 server.py > nohup.out 2>&1 &
+```
+
+**Verify both are up and the shared battle session survived:**
+
+```bash
+ss -ltn | grep -E ':(4096|5000)\b'            # both must show LISTEN
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/            # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/api/sessions # 200
+```
+
+**Stop** (clean: TERM first, escalate to KILL only if it resists, then PROVE the
+ports are free — a stop is only real when nothing is bound):
+
+```bash
+# stop the 5000 proxy
+kill -TERM "$(ss -ltnp 2>/dev/null | grep ':5000' | grep -oP '(?<=pid=)\d+' | head -1)"; sleep 1
+kill -KILL "$(ss -ltnp 2>/dev/null | grep ':5000' | grep -oP '(?<=pid=)\d+' | head -1)" 2>/dev/null
+
+# stop the 4096 shared serve
+kill -TERM "$(ss -ltnp 2>/dev/null | grep ':4096' | grep -oP '(?<=pid=)\d+' | head -1)"; sleep 1
+kill -KILL "$(ss -ltnp 2>/dev/null | grep ':4096' | grep -oP '(?<=pid=)\d+' | head -1)" 2>/dev/null
+
+# prove the ports are actually free (authoritative: ss, not "the app said so")
+ss -ltn | grep -E ':(4096|5000)\b' && echo "STILL BOUND" || echo "ALL FREE"
+```
+
+> The Desktop keeps following **http://127.0.0.1:5000** across these restarts —
+> same shared session, no popup, no re-typing.
+
 ### Models and the battle flow on V2
 
 In V2 the model is a **session property**, not a per-prompt field. The battle flow
