@@ -516,6 +516,7 @@
       <button id="stop" style="display:none">Stop</button>
     </div>
   </div>
+  <script src="/js/viewer.js"></script>
   <script>
     const chat = document.getElementById('chat');
     const input = document.getElementById('input');
@@ -668,42 +669,8 @@
       }
     }
 
-    /* Pure, XSS-safe renderer. Escapes first, then does a line-based fence scan:
-       - a line starting with ``` (optionally a language tag) opens a code block;
-       - a following bare ``` line closes it (leading/trailing whitespace tolerated);
-       - content lines starting with ``` toggle state; other ```-containing lines stay
-         as code content (nested-safe);
-       - a never-closed fence degrades to a code block for the remainder (malformed-safe).
-       Newlines are preserved by CSS white-space:pre-wrap. */
-    function escapeHtml(s) {
-      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    function renderContent(text) {
-      const esc = escapeHtml(text);
-      const lines = esc.split('\n');
-      let html = '', inCode = false, buf = [];
-      for (const line of lines) {
-        const fence = line.match(/^\s*```(.*?)\s*$/);
-        if (fence) {
-          if (inCode) {                       // closer
-            inCode = false;
-            html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
-            buf = [];
-          } else {                            // opener (language tag in fence[1] is ignored)
-            inCode = true;
-          }
-          continue;
-        }
-        if (inCode) buf.push(line);
-        else html += line + '\n';
-      }
-      if (inCode) {                           // unclosed fence: render the remainder as code
-        html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
-      }
-      return html || '…';
-    }
+    /* Message rendering (escapeHtml / renderContent) lives in /js/viewer.js,
+       shared with the server-side viewer pages. */
 
     /* Builds a message bubble element WITHOUT appending it (used by reload batching). */
     function makeMsg(role, text, who) {
@@ -807,6 +774,7 @@
       input.value = '';
       localStorage.setItem('oc-chat-model', modelA.value);
       addMsg('user', text);
+      stopBtn.style.display = '';   // Stop can cancel your own message too
       try {
         const res = await streamReply({
           model: modelA.value, text, session_id: sessionId, new_session: sessionId == null,
@@ -821,6 +789,8 @@
         addMsg('error', 'Error: ' + e.message);
         avatarA.setState('error');
         avatarA.setMessage(e.message.slice(0, 80));
+      } finally {
+        stopBtn.style.display = 'none';
       }
       busy = false;
       input.focus();
@@ -856,7 +826,10 @@
             title: 'Bot battle'
           });
           if (res.error) break;                 // server/provider error surfaced in the bubble
-          if (!res.session_id) throw new Error('lost session id on turn ' + i);
+          if (!res.session_id) {
+            if (battleAbort) break;              // stopped before the session was created
+            throw new Error('lost session id on turn ' + i);
+          }
           battleSession = res.session_id;       // reuse the same session for every later turn
           const agreed = /\[agreed\]/i.test(res.text);
           const cleanText = res.text.replace(/\[agreed\]/ig, '').trim();

@@ -109,13 +109,12 @@ JSON API:
 | Method | Path                             | Description                                                                                                    |
 | ------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | GET    | `/models`, `/api/models`     | All models available from the backend                                                                          |
-| GET    | `/api/tabs/full`               | All tabs with HTML snapshots                                                                                   |
-| GET    | `/api/tab/<id>/html`           | HTML snapshot for a single tab                                                                                 |
+| GET    | `/api/tabs/full`               | All tabs with full transcripts                                                                                 |
+| GET    | `/api/tab/<id>/html`           | Tab snapshot (title, url, messages) for one session                                                            |
 | GET    | `/api/sessions/full`           | All sessions and full transcripts                                                                              |
 | GET    | `/api/sessions`                | Session list for the sidebar (newest first, max 50)                                                            |
 | GET    | `/api/history?session_id=<id>` | User/assistant messages of a session                                                                           |
 | POST   | `/api/chat/stream`             | SSE stream:`{model, text, session_id?, new_session?, title?}` → `{session_id}`, `{delta}…`, `{done}` |
-| POST   | `/api/clear`                   | Reset the client conversation                                                                                  |
 | POST   | `/api/delete`                  | Delete a session:`{session_id}`                                                                              |
 
 Any other path is forwarded to the backend on port 4096 with status code and

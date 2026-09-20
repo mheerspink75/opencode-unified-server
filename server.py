@@ -15,13 +15,12 @@ Endpoints:
   GET  /debug                          debug dashboard
   GET  /server/<b64>/session/<id>      backend session viewer
   GET  /models, /api/models            all models available from the backend
-  GET  /api/tabs/full                  all tabs with HTML snapshots
-  GET  /api/tab/<id>/html              HTML snapshot for a single tab
+  GET  /api/tabs/full                  all tabs with full transcripts
+  GET  /api/tab/<id>/html              tab snapshot (title, url, messages)
   GET  /api/sessions/full              all sessions and full transcripts
   GET  /api/sessions                   session list for the frontend sidebar
   GET  /api/history?session_id=<id>    one session's messages
   POST /api/chat/stream                SSE chat stream (create/reuse session, relay text)
-  POST /api/clear                      reset the client conversation
   POST /api/delete                     delete a session
   <anything else>                      forwarded to the backend (status/headers kept)
 
@@ -64,6 +63,7 @@ _PROXY_NETLOC = f"{HOST}:{PORT}"
 _BACKEND_NETLOC = "127.0.0.1:4096"
 
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+VIEWER_JS = Path(__file__).resolve().parent / "viewer.js"
 
 
 def fetch_models():
@@ -213,53 +213,36 @@ def default_session_id():
 
 
 def fetch_messages(session_id):
-    """Full transcript for one session via the backend history endpoint."""
+    """Flatten one session's backend messages into [{role, text}] for the user
+    and assistant roles only (the same view the chat UI shows). Uses the backend
+    /session/<id>/message endpoint, which is the one that reliably exists."""
     try:
-        url = backend_url("/api/history?session_id=" + urllib.parse.quote(session_id))
-        with urllib.request.urlopen(url, timeout=30) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        return data.get("messages", []) if isinstance(data, dict) else []
+        raw = http_get_json("/session/" + urllib.parse.quote(session_id) + "/message")
     except Exception:
         return []
-
-
-def render_html(text):
-    """Render message text: escape it, then wrap ```fences``` in a styled code
-    block (gray bordered, monospace). Same pipeline as the chat UI."""
-    esc = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-           .replace('"', "&quot;").replace("'", "&#39;"))
-    lines = esc.split("\n")
-    out, buf, in_code = [], [], False
-    for line in lines:
-        if line.lstrip().startswith("```"):
-            if in_code:
-                in_code = False
-                out.append('<pre class="codeblock"><code>' + "\n".join(buf) + "</code></pre>")
-                buf = []
-            else:
-                in_code = True
-            continue
-        if in_code:
-            buf.append(line)
+    if isinstance(raw, dict):
+        raw = raw.get("messages", [])
+    msgs = []
+    for m in raw if isinstance(raw, list) else []:
+        role = m.get("info", {}).get("role") or m.get("role")
+        parts = m.get("parts")
+        if isinstance(parts, list):
+            text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
         else:
-            out.append(line)
-    if in_code:
-        out.append('<pre class="codeblock"><code>' + "\n".join(buf) + "</code></pre>")
-    return "\n".join(out)
+            text = m.get("text", "") or ""
+        if role in ("user", "assistant") and text.strip():
+            msgs.append({"role": role, "text": text})
+    return msgs
 
 
 def build_tab(s):
     """Build a tab snapshot dict for one session."""
     session_id = s["id"]
-    msgs = fetch_messages(session_id)
-    text = "\n\n".join("[" + m.get("role", "") + "] " + m.get("text", "") for m in msgs)
     return {
         "tabId": session_id,
         "title": s.get("title", "Untitled"),
         "url": build_absolute("/server/" + SERVER_B64 + "/session/" + session_id),
-        "html": render_html(text),
-        "messages": msgs,
-        "updated": s.get("time", {}).get("updated", ""),
+        "messages": fetch_messages(session_id),
     }
 
 
@@ -284,29 +267,8 @@ a{color:#6fa8ff;}
 iframe{width:100%;height:62vh;border:1px solid #3a3b44;border-radius:8px;background:#17181c;}
 """
 
-PAGE_JS = 'var PROXY_BASE = "' + PROXY_BASE + '";\n' + r"""
-function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function renderContent(text){
-  const lines=escapeHtml(text).split('\n');
-  let html='',inCode=false,buf=[];
-  for(const line of lines){
-    const f=line.match(/^\s*```(.*?)\s*$/);
-    if(f){
-      if(inCode){inCode=false;html+='<pre class="codeblock"><code>'+buf.join('\n')+'</code></pre>';buf=[];}
-      else{inCode=true;}
-      continue;
-    }
-    if(inCode)buf.push(line);else html+=line+'\n';
-  }
-  if(inCode)html+='<pre class="codeblock"><code>'+buf.join('\n')+'</code></pre>';
-  return html||'…';
-}
-function bubbles(messages){
-  let h='';
-  for(const m of messages||[]){h+='<div class="msg"><span class="role">'+escapeHtml(m.role||'')+':</span> '+renderContent(m.text||'')+'</div>';}
-  return h;
-}
-"""
+PAGE_JS = ('var PROXY_BASE = "' + PROXY_BASE + '";\n'
+           + VIEWER_JS.read_text(encoding="utf-8"))
 
 AUTO_REFRESH_JS = "setTimeout(function(){ window.location.reload(); }, 2000);"
 
@@ -364,8 +326,10 @@ async function load(){
 load();
 """
 
-_NAV = ("<div class='nav'><a href='/'>/</a><a href='/tabs'>/tabs</a>"
-        "<a href='/debug'>/debug</a><a href='/tabs/multiplex'>multiplex</a></div>")
+_NAV = ("<div class='nav'><a href='" + build_absolute("/") + "'>/</a>"
+        "<a href='" + build_absolute("/tabs") + "'>/tabs</a>"
+        "<a href='" + build_absolute("/debug") + "'>/debug</a>"
+        "<a href='" + build_absolute("/tabs/multiplex") + "'>multiplex</a></div>")
 
 
 def page(title, body_html, script):
@@ -379,9 +343,9 @@ def page_tabs():
     return page("Open Tabs", _NAV + "<div id='box'></div>", TABS_JS)
 
 
-def page_tab_view(session_id):
-    script = ("var TAB_ID = " + json.dumps(session_id) + ";\n" + TAB_VIEW_JS)
-    return page("Tab View", _NAV + "<div id='box'></div>", script)
+def page_tab_view():
+    """Single-tab viewer; the session id comes from ?id= in the URL (TAB_VIEW_JS)."""
+    return page("Tab View", _NAV + "<div id='box'></div>", TAB_VIEW_JS)
 
 
 def page_multiplex():
@@ -392,19 +356,23 @@ def page_debug():
     return page("Debug Dashboard", _NAV + "<div id='box'></div>", DEBUG_JS)
 
 
+BACKEND_VIEWER_JS = r"""
+async function load(){
+  const box=document.getElementById('box');
+  let d;
+  try{d=await (await fetch(PROXY_BASE+'/api/tab/'+encodeURIComponent(BACKEND_VIEWER_ID)+'/html')).json();}
+  catch(e){box.innerHTML='<div class="tab">error: '+escapeHtml(e.message)+'</div>';return;}
+  if(d.error){box.innerHTML='<div class="tab">not found: '+escapeHtml(d.error)+'</div>';return;}
+  box.innerHTML='<div class="tab"><h2>'+escapeHtml(d.title)+'</h2><div class="meta">id: '+escapeHtml(d.tabId)+' · url: <a href="'+escapeHtml(d.url)+'">'+escapeHtml(d.url)+'</a></div>'+bubbles(d.messages)+'</div>';
+}
+load();
+"""
+
+
 def page_backend_viewer(session_id):
-    """Backend session viewer: server-rendered transcript, auto-refreshing."""
-    msgs = fetch_messages(session_id)
-    body = ""
-    for m in msgs:
-        body += ("<div class='msg'><span class='role'>" + escape_attr(m.get("role", "")) +
-                 ":</span> " + render_html(m.get("text", "")) + "</div>")
-    return page("Backend Session " + session_id, _NAV + "<div id='box'>" + body + "</div>", "")
-
-
-def escape_attr(s):
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace('"', "&quot;").replace("'", "&#39;"))
+    """Backend session viewer: client-rendered transcript, auto-refreshing."""
+    script = ("var BACKEND_VIEWER_ID = " + json.dumps(session_id) + ";\n" + BACKEND_VIEWER_JS)
+    return page("Backend Session " + session_id, _NAV + "<div id='box'></div>", script)
 
 
 # ---------------------------------------------------------------------------
@@ -575,6 +543,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 self._send_file(str(INDEX_HTML))
+            elif path == "/js/viewer.js":
+                self._send_file(str(VIEWER_JS), "application/javascript; charset=utf-8")
             elif path in ("/models", "/api/models"):
                 self._send_json({"models": fetch_models()})
             elif path == "/api/sessions":
@@ -588,14 +558,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/history"):
                 qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
                 sid = qs.get("session_id", [""])[0]
-                msgs = []
-                for msg in http_get_json("/session/" + urllib.parse.quote(sid) + "/message"):
-                    role = msg.get("info", {}).get("role")
-                    text = "".join(p.get("text", "") for p in msg.get("parts", [])
-                                   if p.get("type") == "text")
-                    if role in ("user", "assistant") and text.strip():
-                        msgs.append({"role": role, "text": text})
-                self._send_json({"messages": msgs})
+                self._send_json({"messages": fetch_messages(sid)})
             elif path == "/api/tabs/full":
                 self._send_json({"tabs": [build_tab(s) for s in list_sessions()]})
             elif path == "/api/sessions/full":
@@ -614,13 +577,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({
                         "tabId": sid, "title": "Untitled",
                         "url": build_absolute("/server/" + SERVER_B64 + "/session/" + sid),
-                        "html": "", "messages": [], "updated": "",
+                        "messages": [],
                     })
             elif path == "/tabs":
                 self._send_html(page_tabs())
             elif path == "/tabs/view":
-                qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                self._send_html(page_tab_view(qs.get("id", [""])[0]))
+                self._send_html(page_tab_view())
             elif path == "/tabs/multiplex":
                 self._send_html(page_multiplex())
             elif path == "/debug":
@@ -644,8 +606,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "invalid JSON"}, 400)
         if path == "/api/chat/stream":
             self._stream_chat(body)
-        elif path == "/api/clear":
-            self._send_json({"ok": True})
         elif path == "/api/delete":
             try:
                 sid = body["session_id"]
@@ -733,7 +693,6 @@ def open_tabs(default):
 
 
 def main():
-    server = None
     if not start_backend():
         print("Startup failed")
         return
@@ -766,7 +725,6 @@ def main():
                 except Exception:
                     pass
 
-    server = None
     print("Server stopped")
 
 
