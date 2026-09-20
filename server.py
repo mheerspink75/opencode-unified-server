@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified OpenCode server: backend session viewer, proxy pages, auto-refresh,
+"""Unified OpenCode server: backend session viewer, pages, auto-refresh,
 and multi-tab debugging all in one self-contained file.
 
 Runs entirely from a single process on http://127.0.0.1:5000 with no second
@@ -25,7 +25,7 @@ Endpoints:
   POST /api/delete                     delete a session
   <anything else>                      forwarded to the backend (status/headers kept)
 
-All proxy pages auto-refresh every 2 seconds, use absolute URLs only (port always
+All pages auto-refresh every 2 seconds, use absolute URLs only (port always
 present, no "//", no relative fetches), and are fully self-contained with no
 client-side state. Output is deterministic: no randomness and no timestamps.
 
@@ -45,22 +45,26 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from html.parser import HTMLParser
+import subprocess
+import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 5000
+
 BACKEND = "http://127.0.0.1:4096"
+
 SERVER_LABEL = "local"
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 
-PROXY_BASE = "http://" + HOST + ":" + str(PORT)
-_PROXY_NETLOC = HOST + ":" + str(PORT)
+PROXY_BASE = f"http://{HOST}:{PORT}"
+_PROXY_NETLOC = f"{HOST}:{PORT}"
 _BACKEND_NETLOC = "127.0.0.1:4096"
 
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+
 
 def fetch_models():
     """Return all models available from the OpenCode backend. Returns an empty
@@ -217,38 +221,6 @@ def fetch_messages(session_id):
         return data.get("messages", []) if isinstance(data, dict) else []
     except Exception:
         return []
-
-
-def page_text(html):
-    """Extract human-readable text from an HTML page (BeautifulSoup stand-in)."""
-
-    class _P(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.out = []
-            self.skip = 0
-
-        def handle_starttag(self, tag, attrs):
-            if tag in ("script", "style", "noscript"):
-                self.skip += 1
-            if tag in ("br", "p", "div", "li", "pre", "tr",
-                       "h1", "h2", "h3", "h4", "h5", "h6", "table"):
-                self.out.append("\n")
-
-        def handle_endtag(self, tag):
-            if tag in ("script", "style", "noscript") and self.skip:
-                self.skip -= 1
-            if tag in ("p", "div", "li", "pre", "tr",
-                       "h1", "h2", "h3", "h4", "h5", "h6", "table"):
-                self.out.append("\n")
-
-        def handle_data(self, data):
-            if not self.skip:
-                self.out.append(data)
-
-    p = _P()
-    p.feed(html)
-    return "".join(p.out)
 
 
 def render_html(text):
@@ -428,22 +400,6 @@ def page_backend_viewer(session_id):
         body += ("<div class='msg'><span class='role'>" + escape_attr(m.get("role", "")) +
                  ":</span> " + render_html(m.get("text", "")) + "</div>")
     return page("Backend Session " + session_id, _NAV + "<div id='box'>" + body + "</div>", "")
-
-
-def page_index(default):
-    links = (
-        "<div class='tab'><h2>Unified server</h2>"
-        "<div class='meta'>OpenCode backend at " + backend_url("/") + "</div>"
-        "<div class='msg'><a href='" + build_absolute("/tabs") + "'>/tabs</a></div>"
-        "<div class='msg'><a href='" + build_absolute("/tabs/view?id=" + urllib.parse.quote(default)) +
-        "'>/tabs/view?id=" + escape_attr(default) + "</a></div>"
-        "<div class='msg'><a href='" + build_absolute("/tabs/multiplex") + "'>/tabs/multiplex</a></div>"
-        "<div class='msg'><a href='" + build_absolute("/debug") + "'>/debug</a></div>"
-        "<div class='msg'><a href='" + build_absolute("/server/" + SERVER_B64 + "/session/" + urllib.parse.quote(default)) +
-        "'>/server/" + SERVER_B64 + "/session/" + escape_attr(default) + "</a></div>"
-        "</div>"
-    )
-    return page("OpenCode Unified Server", _NAV + "<div id='box'>" + links + "</div>", "")
 
 
 def escape_attr(s):
@@ -722,44 +678,55 @@ class Handler(BaseHTTPRequestHandler):
 # Startup and shutdown.
 # ---------------------------------------------------------------------------
 
+_backend_proc = None
+def wait_for_port(host, port, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
+
 def start_backend():
-    """Start the backend session/viewer logic (in-process: session access and
-    rendering functions). Returns True on success."""
-    return True
-
-
-def start_proxy():
-    """Start the proxy route/forwarding logic (in-process: routing and
-    forwarding functions). Returns True on success."""
-    return True
-
-
-def _require_proxy_url(url):
-    """Guarantee a startup URL is http on 127.0.0.1:5000. Rejects bare hosts,
-    https, default ports 80/443, and any missing port by rebuilding it from the
-    path. The returned URL always has an explicit :5000."""
+    global _backend_proc
+    # Already running?
     try:
-        u = urllib.parse.urlsplit(url)
-    except Exception:
-        u = None
-    if (u and u.scheme.lower() == "http"
-            and (u.hostname or "").lower() in ALLOWED_HOSTS
-            and u.port == PORT):
-        return url
-    np = normalize_path(u.path + ("?" + u.query if u.query else "")) if u else normalize_path(url)
-    return "http://127.0.0.1:" + str(PORT) + ("/" + np if np else "")
+        with socket.create_connection(("127.0.0.1", 4096), timeout=1):
+            return True
+    except OSError:
+        pass
+    try:
+        _backend_proc = subprocess.Popen(
+            ["opencode", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print("Failed to start opencode:", e)
+        return False
+    if not wait_for_port("127.0.0.1", 4096, timeout=30):
+        print("Timed out waiting for opencode on port 4096")
+        try:
+            _backend_proc.terminate()
+        except Exception:
+            pass
+        return False
+    return True
+
 
 
 def open_tabs(default):
     """Open exactly five tabs, every URL on http://127.0.0.1:5000 with the port
     explicitly present (never a bare host, never https, never port 80/443)."""
-    base = "http://127.0.0.1:" + str(PORT)
+    base = f"http://127.0.0.1:{PORT}"
     urls = [
-        _require_proxy_url(base + "/"),
-        _require_proxy_url(base + "/tabs"),
-        _require_proxy_url(base + "/tabs/view?id=" + urllib.parse.quote(default)),
-        _require_proxy_url(base + "/tabs/multiplex"),
-        _require_proxy_url(base + "/server/" + SERVER_B64 + "/session/" + urllib.parse.quote(default)),
+        base + "/",
+        base + "/tabs",
+        base + "/tabs/view?id=" + urllib.parse.quote(default),
+        base + "/tabs/multiplex",
+        base + "/server/" + SERVER_B64 + "/session/" + urllib.parse.quote(default),
     ]
     for u in urls:
         threading.Thread(target=webbrowser.open, args=(u,), daemon=True).start()
@@ -767,7 +734,7 @@ def open_tabs(default):
 
 def main():
     server = None
-    if not start_backend() or not start_proxy():
+    if not start_backend():
         print("Startup failed")
         return
     server = ThreadingHTTPServer((HOST, PORT), Handler)
@@ -787,8 +754,21 @@ def main():
     finally:
         server.shutdown()
         server.server_close()
-        server = None
-        print("Server stopped")
+
+        global _backend_proc
+        if _backend_proc is not None:
+            try:
+                _backend_proc.terminate()
+                _backend_proc.wait(timeout=5)
+            except Exception:
+                try:
+                    _backend_proc.kill()
+                except Exception:
+                    pass
+
+    server = None
+    print("Server stopped")
+
 
 
 if __name__ == "__main__":

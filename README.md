@@ -72,11 +72,11 @@ Two robot avatars (A blue, B green) react to the conversation pipeline
 (user → server → opencode → server → avatar). Each has its own state via
 `makeAvatar(svgEl, captionEl)` instances (`avatarA` / `avatarB` in `index.html`):
 
-| State      | When                                    | Look                                   |
-|------------|-----------------------------------------|----------------------------------------|
-| `idle`     | Nothing happening                       | Gentle bobbing + occasional blink      |
-| `thinking` | After you send, waiting for first token | Amber eyes darting, antenna pulsing    |
-| `speaking` | Tokens streaming in                     | Animated mouth, glowing cheeks         |
+| State        | When                                    | Look                                                   |
+| ------------ | --------------------------------------- | ------------------------------------------------------ |
+| `idle`     | Nothing happening                       | Gentle bobbing + occasional blink                      |
+| `thinking` | After you send, waiting for first token | Amber eyes darting, antenna pulsing                    |
+| `speaking` | Tokens streaming in                     | Animated mouth, glowing cheeks                         |
 | `error`    | Request failed                          | Red eyes, wavy frown (auto-recovers to idle after 4 s) |
 
 Front-end API (`avatarA` / `avatarB` objects in `index.html`):
@@ -95,28 +95,28 @@ State machine: `idle → thinking → speaking → idle`, and `error → idle`
 
 HTML pages:
 
-| Method | Path                          | Description                                        |
-|--------|-------------------------------|----------------------------------------------------|
-| GET    | `/` or `/index.html`          | Bot battle chat frontend (does not auto-refresh)   |
-| GET    | `/tabs`                       | Tabs viewer (auto-refresh every 2 s)               |
-| GET    | `/tabs/view?id=<id>`          | Single tab viewer (auto-refresh every 2 s)         |
-| GET    | `/tabs/multiplex`             | Multiplex (iframe) viewer (auto-refresh every 2 s) |
-| GET    | `/debug`                      | Debug dashboard (auto-refresh every 2 s)           |
-| GET    | `/server/<b64>/session/<id>`  | Backend session viewer (auto-refresh every 2 s)    |
+| Method | Path                           | Description                                        |
+| ------ | ------------------------------ | -------------------------------------------------- |
+| GET    | `/` or `/index.html`       | Bot battle chat frontend (does not auto-refresh)   |
+| GET    | `/tabs`                      | Tabs viewer (auto-refresh every 2 s)               |
+| GET    | `/tabs/view?id=<id>`         | Single tab viewer (auto-refresh every 2 s)         |
+| GET    | `/tabs/multiplex`            | Multiplex (iframe) viewer (auto-refresh every 2 s) |
+| GET    | `/debug`                     | Debug dashboard (auto-refresh every 2 s)           |
+| GET    | `/server/<b64>/session/<id>` | Backend session viewer (auto-refresh every 2 s)    |
 
 JSON API:
 
-| Method | Path                              | Description                                      |
-|--------|-----------------------------------|--------------------------------------------------|
-| GET    | `/models`, `/api/models`          | All models available from the backend    |
-| GET    | `/api/tabs/full`                  | All tabs with HTML snapshots                     |
-| GET    | `/api/tab/<id>/html`              | HTML snapshot for a single tab                   |
-| GET    | `/api/sessions/full`              | All sessions and full transcripts                |
-| GET    | `/api/sessions`                   | Session list for the sidebar (newest first, max 50) |
-| GET    | `/api/history?session_id=<id>`    | User/assistant messages of a session             |
-| POST   | `/api/chat/stream`                | SSE stream: `{model, text, session_id?, new_session?, title?}` → `{session_id}`, `{delta}…`, `{done}` |
-| POST   | `/api/clear`                      | Reset the client conversation                    |
-| POST   | `/api/delete`                     | Delete a session: `{session_id}`                 |
+| Method | Path                             | Description                                                                                                    |
+| ------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GET    | `/models`, `/api/models`     | All models available from the backend                                                                          |
+| GET    | `/api/tabs/full`               | All tabs with HTML snapshots                                                                                   |
+| GET    | `/api/tab/<id>/html`           | HTML snapshot for a single tab                                                                                 |
+| GET    | `/api/sessions/full`           | All sessions and full transcripts                                                                              |
+| GET    | `/api/sessions`                | Session list for the sidebar (newest first, max 50)                                                            |
+| GET    | `/api/history?session_id=<id>` | User/assistant messages of a session                                                                           |
+| POST   | `/api/chat/stream`             | SSE stream:`{model, text, session_id?, new_session?, title?}` → `{session_id}`, `{delta}…`, `{done}` |
+| POST   | `/api/clear`                   | Reset the client conversation                                                                                  |
+| POST   | `/api/delete`                  | Delete a session:`{session_id}`                                                                              |
 
 Any other path is forwarded to the backend on port 4096 with status code and
 headers preserved; redirects are rewritten to stay on port 5000.
