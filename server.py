@@ -22,7 +22,7 @@ Endpoints:
   GET  /css/styles.css                 chat frontend stylesheet
   GET  /js/app.js                      chat frontend script
   GET  /js/viewer.js                   shared message renderer for chat + viewers
-  GET  /models, /api/models            all models available from the backend
+  GET  /models, /api/models            free chat-capable models (grouped by provider, alphabetical)
   GET  /api/tabs/full                  all tabs with full transcripts
   GET  /api/tab/<id>/html              tab snapshot (title, url, messages)
   GET  /api/sessions/full              all sessions and full transcripts
@@ -104,25 +104,50 @@ APP_JS = Path(__file__).resolve().parent / "js" / "app.js"
 VIEWER_JS = Path(__file__).resolve().parent / "js" / "viewer.js"
 
 
+def _is_free_model(m):
+    """A model is free when every pricing tier costs $0 for input and output.
+    A model with no pricing data at all is NOT treated as free (it might bill
+    us later), so it gets excluded too."""
+    cost = m.get("cost") or []
+    if not cost:
+        return False
+    return all(
+        (c.get("input") or 0) == 0 and (c.get("output") or 0) == 0
+        for c in cost if isinstance(c, dict)
+    )
+
+
+def _is_chat_model(m):
+    """Chat-capable = accepts text input and produces text output."""
+    caps = m.get("capabilities") or {}
+    return "text" in (caps.get("input") or []) and "text" in (caps.get("output") or [])
+
+
 def fetch_models():
-    """Return all models available from the OpenCode backend (V2 /api/model).
-    Each entry is {id: "provider/model", name}. Returns an empty list if the
-    backend cannot be reached."""
+    """Return the free, chat-capable models from the OpenCode backend
+    (V2 /api/model), organized by provider then by model name alphabetically.
+    Each entry is {id: "provider/model", name}. Paid models, non-chat models
+    (image/audio/video/embeddings) and models without pricing data are
+    excluded, so the bot dropdowns only ever offer models that are free to run
+    and can actually chat. Returns an empty list if the backend is unreachable."""
     try:
         data = http_get_json("/api/model")
         items = data.get("data", []) if isinstance(data, dict) else data
-        models = []
+        picks = []
         for m in items if isinstance(items, list) else []:
             pid = m.get("providerID", "")
             mid = m.get("modelID") or m.get("id", "")
             name = m.get("name", mid)
             if not (pid and mid):
                 continue
-            models.append({
+            if not (_is_free_model(m) and _is_chat_model(m)):
+                continue
+            picks.append((pid.casefold(), name.casefold(), {
                 "id": pid + "/" + mid,
                 "name": (pid + ": " + name) if pid else name,
-            })
-        return models
+            }))
+        picks.sort(key=lambda p: (p[0], p[1], p[2]["id"].casefold()))
+        return [p[2] for p in picks]
     except Exception:
         return []
 
