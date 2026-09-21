@@ -238,13 +238,15 @@ def http_post_json(path, payload):
 
 def list_sessions():
     """Return the list of open sessions from the backend (V2 /api/session),
-    following pagination cursors and newest-first by default."""
+    following pagination cursors and newest-first by default. The V2 backend
+    rejects 'cursor combined with order' (InvalidCursorError), so the
+    order=desc parameter is only sent on the first page."""
     acc = []
     cursor = None
     for _ in range(50):
         path = "/api/session?limit=100&order=desc"
         if cursor:
-            path += "&cursor=" + urllib.parse.quote(cursor)
+            path = "/api/session?limit=100&cursor=" + urllib.parse.quote(cursor)
         try:
             data = http_get_json(path)
         except Exception:
@@ -282,7 +284,11 @@ def fetch_messages(session_id):
         path = ("/api/session/" + urllib.parse.quote(session_id)
                 + "/message?limit=100&order=asc")
         if cursor:
-            path += "&cursor=" + urllib.parse.quote(cursor)
+            # The V2 backend rejects 'cursor combined with order', so once we
+            # follow a cursor the order param must be dropped (the cursor
+            # already encodes the direction).
+            path = ("/api/session/" + urllib.parse.quote(session_id)
+                    + "/message?limit=100&cursor=" + urllib.parse.quote(cursor))
         try:
             data = http_get_json(path)
         except Exception:
@@ -536,6 +542,36 @@ class Handler(BaseHTTPRequestHandler):
             return True, None, full
         return False, None, None
 
+    def _latest_user_text(self, sid):
+        """Newest stored user message text for a session, or None on error.
+        Used to detect duplicate prompt posts (the battle re-fires the same
+        turn's text when a previous stream is still in flight)."""
+        try:
+            data = http_get_json(
+                "/api/session/" + urllib.parse.quote(sid)
+                + "/message?limit=20&order=desc")
+        except Exception:
+            return None
+        msgs = data.get("data", []) if isinstance(data, dict) else data
+        for m in msgs if isinstance(msgs, list) else []:
+            if m.get("type") == "user":
+                return m.get("text", "") or ""
+        return None
+
+    def _newest_assistant(self, sid):
+        """Newest assistant message object for a session, or None."""
+        try:
+            data = http_get_json(
+                "/api/session/" + urllib.parse.quote(sid)
+                + "/message?limit=20&order=desc")
+        except Exception:
+            return None
+        msgs = data.get("data", []) if isinstance(data, dict) else data
+        for m in msgs if isinstance(msgs, list) else []:
+            if m.get("type") == "assistant":
+                return m
+        return None
+
     def _stream_chat(self, body):
         """Bridge the frontend's /api/chat/stream to the OpenCode V2 backend:
         create or reuse a session (switching the session's model when reusing,
@@ -573,10 +609,34 @@ class Handler(BaseHTTPRequestHandler):
         events = None
         try:
             # Reusing a session: set its model (battle mode alternates A/B).
+            # Idempotency guard: the battle (or any retrying client) may fire
+            # the same turn's /api/chat/stream again while the previous turn is
+            # still in flight. Posting /model + /prompt again would queue up to
+            # dozens of identical user messages (the backend records them all
+            # en masse once the busy turn completes) plus a model-switch storm,
+            # which is exactly the "so many duplicate messages" symptom. So if
+            # the newest user message already carries this exact text, do NOT
+            # post anything: instead join the in-flight turn (relay its deltas
+            # and poll for completion). If that turn already completed, just
+            # replay the finished reply, still without posting.
+            skip_post = False
             if not new_session:
-                http_post_json(
-                    "/api/session/" + urllib.parse.quote(sid) + "/model",
-                    {"model": model_ref})
+                if self._latest_user_text(sid) == body["text"]:
+                    skip_post = True
+                    ast = self._newest_assistant(sid)
+                    if ast is not None and (ast.get("time") or {}).get("completed"):
+                        # The exact turn already finished; replay it and stop.
+                        full = "".join(p.get("text", "") for p in
+                                       (ast.get("content") or [])
+                                       if p.get("type") == "text")
+                        if full:
+                            self._sse({"delta": full})
+                        self._sse({"done": True})
+                        return
+                if not skip_post:
+                    http_post_json(
+                        "/api/session/" + urllib.parse.quote(sid) + "/model",
+                        {"model": model_ref})
             # Subscribe to the backend event stream BEFORE posting the prompt.
             req = urllib.request.Request(
                 backend_url("/api/event"), headers=_auth_header())
@@ -587,9 +647,10 @@ class Handler(BaseHTTPRequestHandler):
                     sock.settimeout(1.0)
             except Exception:
                 pass
-            http_post_json(
-                "/api/session/" + urllib.parse.quote(sid) + "/prompt",
-                {"text": body["text"]})
+            if not skip_post:
+                http_post_json(
+                    "/api/session/" + urllib.parse.quote(sid) + "/prompt",
+                    {"text": body["text"]})
             emitted = ""
             last_poll = 0.0
             pending = b""
