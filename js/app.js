@@ -316,14 +316,15 @@ async function startBattle() {
       }
       battleSession = res.session_id;       // reuse the same session for every later turn
       const agreed = /\[agreed\]/i.test(res.text);
-      const cleanText = res.text.replace(/\[agreed\]/ig, '').trim();
-      lastMsg = cleanText + (i < MAX_BATTLE_TURNS - 1
-        ? `\n\n---\n${sys(aTurn ? 'B' : 'A')} Reply to that.` : '');
       if (agreed) {
         addMsg('assistant', '🤝 The bots reached an agreement.', 'Referee');
         break;
       }
       if (!res.text) break;                 // empty reply ends the battle
+      // The full transcript already lives in the session history, so the next
+      // turn only needs the floor handed to the other bot — no need to repeat
+      // the previous reply in the prompt (context stays linear, no echo bait).
+      lastMsg = sys(aTurn ? 'B' : 'A') + '\n\nReply to the previous message.';
     }
   } catch (e) {
     addMsg('error', 'Battle error: ' + e.message);

@@ -536,11 +536,37 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(("data: " + json.dumps(obj) + "\n\n").encode("utf-8"))
         self.wfile.flush()
 
-    def _assistant_done(self, sid):
+    def _newest_assistant_created(self, sid):
+        """Newest assistant message creation time for a session. The stream
+        logic snapshots this BEFORE posting a prompt, so the completion poll
+        (which has no other way to tell turns apart) can ignore assistant
+        messages older than the snapshot — otherwise a slow-to-start provider
+        makes _assistant_done latch onto the PREVIOUS turn's completed reply
+        and replay it as a duplicate response."""
+        try:
+            data = http_get_json(
+                "/api/session/" + urllib.parse.quote(sid)
+                + "/message?limit=10&order=desc")
+        except Exception:
+            return 0
+        msgs = data.get("data", []) if isinstance(data, dict) else data
+        if not isinstance(msgs, list):
+            return 0
+        best = 0
+        for m in msgs:
+            if m.get("type") != "assistant":
+                continue
+            created = (m.get("time") or {}).get("created") or 0
+            if created > best:
+                best = created
+        return best
+
+    def _assistant_done(self, sid, min_created=0):
         """Poll GET /api/session/<id>/message for completion. Returns
         (done, error, full_text): done becomes True once the newest assistant
-        message carries a completed timestamp. V2 does not broadcast a
-        completion event on /api/event, so this poll is the reliable signal."""
+        message created AFTER min_created carries a completed timestamp.
+        V2 does not broadcast a completion event on /api/event, so this poll
+        is the reliable signal."""
         try:
             data = http_get_json(
                 "/api/session/" + urllib.parse.quote(sid)
@@ -555,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
             if m.get("type") != "assistant":
                 continue
             created = (m.get("time") or {}).get("created") or 0
+            if created <= min_created:
+                continue      # a previous turn's reply — not the one we're waiting for
             if best is None or created > best[0]:
                 best = (created, m)
         if best is None:
@@ -672,7 +700,15 @@ class Handler(BaseHTTPRequestHandler):
                     sock.settimeout(1.0)
             except Exception:
                 pass
+            # Snapshot the newest assistant message BEFORE posting the prompt:
+            # only messages created after this point can be THIS turn's reply.
+            # (Without the snapshot a slow-to-start provider makes the completion
+            # poll latch onto the PREVIOUS turn's completed reply.) When skip_post
+            # is set we're joining an in-flight turn, so keep 0 and let the poll
+            # see anything - the snapshot only filters the turn WE post.
+            pre_prompt_created = 0
             if not skip_post:
+                pre_prompt_created = self._newest_assistant_created(sid)
                 http_post_json(
                     "/api/session/" + urllib.parse.quote(sid) + "/prompt",
                     {"text": body["text"]})
@@ -705,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
                 now = time.time()
                 if now - last_poll >= 0.5:
                     last_poll = now
-                    done, err, full = self._assistant_done(sid)
+                    done, err, full = self._assistant_done(sid, pre_prompt_created)
                     if err:
                         self._sse({"error": err})
                         self._sse({"done": True})
