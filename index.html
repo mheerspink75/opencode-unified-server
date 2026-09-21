@@ -19,14 +19,35 @@
     <header>
       <button id="toggle" title="Toggle sidebar">☰</button>
       <h1>Opencode Chat</h1>
+      <span id="health" class="dot" title="backend status"></span>
       <span id="status">loading models…</span>
-      <label>🤖 <select id="modelA"></select></label>
-      <label>🤖 <select id="modelB"></select></label>
-      <button id="battle" title="Bot battle mode: the two bots talk to each other">⚔ Battle</button>
+      <span id="tokens" title="Approximate context size (chars/4)"></span>
+      <label title="Bot A model">🤖 <select id="modelA"></select></label>
+      <label title="Bot B model">🤖 <select id="modelB"></select></label>
+      <label id="labelC" hidden title="Bot C model">🤖 <select id="modelC"></select></label>
+      <label title="Number of bots in battle mode">Bots <select id="botcount">
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+      </select></label>
+      <input id="maxturns" type="number" min="2" max="100" value="20" title="Max battle turns before auto-stop">
+      <button id="battle" title="Bot battle mode: the bots talk to each other">⚔ Battle</button>
+      <button id="help" title="Keyboard shortcuts">?</button>
     </header>
     <div id="battlebar" hidden>
       <span>⚔ <strong>Battle mode</strong> — the bots are talking to each other</span>
       <span id="battleturn"></span>
+      <label>Judge <select id="judgeModel"></select></label>
+      <button id="verdict" disabled>⚖ Verdict</button>
+    </div>
+    <div id="shortcutpop" hidden>
+      <h3>Keyboard shortcuts</h3>
+      <ul>
+        <li><kbd>Enter</kbd> send / start battle</li>
+        <li><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</li>
+        <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> new chat</li>
+        <li><kbd>/</kbd> filter sessions</li>
+        <li><kbd>Esc</kbd> collapse sidebar</li>
+      </ul>
     </div>
     <div id="avatarbox">
       <div class="avatar-unit">
@@ -71,6 +92,7 @@
         </div>
       </div>
     </div>
+    <button id="newmsgs" hidden>↓ New messages</button>
     <div id="composer">
       <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
       <button id="send">Send</button>

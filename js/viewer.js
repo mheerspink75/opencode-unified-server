@@ -16,6 +16,23 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/* Minimal inline markdown for escaped text: `code`, **bold**, *em*, [links](url).
+   Kept deliberately small to match the project's dependency-free style. */
+function inlineMd(line) {
+  /* Stash code spans as plain-ASCII placeholders (@@CODE0@@, …) so the bold/em
+     passes can't mangle them, then restore by exact token. The token text keeps
+     the restore regex from ever touching digits in entities like &#39;. */
+  const keep = [];
+  let s = line.replace(/`([^`\n]+)`/g, (m, c) => {
+    keep.push('<code class="inline">' + c + '</code>');
+    return '@@CODE' + (keep.length - 1) + '@@';
+  });
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  return s.replace(/@@CODE(\d+)@@/g, (m, i) => keep[+i] != null ? keep[+i] : m);
+}
+
 function renderContent(text) {
   const esc = escapeHtml(text);
   const lines = esc.split('\n');
@@ -37,7 +54,7 @@ function renderContent(text) {
       continue;
     }
     if (inCode) buf.push(line);
-    else html += line + '\n';
+    else html += inlineMd(line) + '\n';
   }
   if (inCode) {                           // unclosed fence: render the remainder as code
     html += '<div class="codewrap">'

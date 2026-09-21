@@ -187,6 +187,111 @@ button:disabled {
   opacity: .7;
 }
 
+#tokens {
+  font-size: .72rem;
+  opacity: .55;
+  white-space: nowrap;
+}
+
+/* Backend health dot */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #777;
+  flex-shrink: 0;
+}
+
+.dot.ok { background: #4caf7d; }
+.dot.bad { background: #ff6b6b; animation: pulse 1s infinite; }
+
+#maxturns {
+  width: 3.6rem;
+  background: #2a2b31;
+  color: #e6e6e6;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: .35rem .4rem;
+  font-size: .85rem;
+}
+
+#help {
+  border-radius: 50%;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  line-height: 1;
+}
+
+#shortcutpop {
+  position: fixed;
+  top: 3.4rem;
+  right: 1rem;
+  z-index: 60;
+  background: #1b1c21;
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: .9rem 1.1rem;
+  font-size: .82rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .5);
+}
+
+#shortcutpop h3 {
+  font-size: .85rem;
+  margin-bottom: .4rem;
+}
+
+#shortcutpop ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+#shortcutpop kbd {
+  background: #2a2b31;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0 .35rem;
+  font-family: inherit;
+  font-size: .75rem;
+}
+
+/* "New messages" pill while scrolled up */
+#newmsgs {
+  position: fixed;
+  bottom: 5.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  background: #2f6fed;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: .35rem .9rem;
+  font-size: .8rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+}
+
+/* Inline markdown bits from viewer.js */
+.msg code.inline {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 4px;
+  padding: 0 .3rem;
+  font-family: var(--mono);
+  font-size: .85em;
+}
+
+.msg a {
+  color: #7fb0ff;
+}
+
+/* Battle replay: tint alternating bot messages */
+.msg.botA { border-left: 3px solid #6fa8ff; }
+.msg.botB { border-left: 3px solid #7ee2a8; }
+.msg.botC { border-left: 3px solid #b58cff; }
+
 #chat {
   flex: 1;
   overflow-y: auto;
@@ -485,6 +590,14 @@ button:disabled {
 
 #avatarB {
   --eye: #7ee2a8;
+}
+
+.avatar-unit.hidden {
+  display: none;
+}
+
+#avatarC {
+  --eye: #b58cff;
 }
 
 @keyframes blink {

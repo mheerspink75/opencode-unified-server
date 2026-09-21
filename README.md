@@ -163,7 +163,18 @@ Press **Ctrl+C** to stop cleanly (no orphan processes).
    while a reply is streaming, and failures surface as dismissible **toasts**.
 6. Message bubbles have hover actions: **Copy** (message text), a **Copy** button
    on every code block (fenced blocks also show their language label), a
-   timestamp tooltip, and **Retry** on error bubbles.
+   timestamp tooltip, and **Retry** on error bubbles. Inline markdown
+   (`` `code` ``, `**bold**`, `*em*`, `[links](url)`) is rendered too.
+7. New chats are **auto-titled** from your first message, and an unsent draft is
+   kept per session in `localStorage` (switch chats and it's still there).
+8. The header shows a **backend health dot** (green/red, polled every 20 s) and a
+   rough **token estimate** (`chars/4`) of the current chat. Failed loads offer a
+   **Reconnect** button.
+9. The view **auto-scrolls only while pinned to the bottom**; scroll up and a
+   **↓ New messages** pill appears instead of yanking the view.
+
+Keyboard shortcuts (**?** button in the header lists them): `Ctrl/⌘+K` new chat,
+`/` focus the sidebar filter, `Esc` collapse the sidebar.
 
 Note: the sidebar shows all opencode sessions, including ones started from the
 `opencode` TUI — you can continue a terminal conversation in the browser and vice
@@ -184,6 +195,15 @@ avatar:
   preserved in one session.
 - While battle mode is toggled on, a banner under the header shows the current
   turn number and which bot is speaking.
+- The header **Bots** selector runs 2- or 3-bot battles (a third purple avatar and
+  model dropdown appear when you pick 3), and the **max-turns** input bounds how
+  long a battle can run (default 20, hard ceiling 100).
+- After a battle (or a Stop), the ⚖ **Verdict** button in the banner sends the
+  transcript to a selectable **judge model**, which declares a winner, names each
+  side's strongest argument, and quotes a memorable line. The verdict is saved as
+  its own session ("Battle verdict").
+- Re-opening a session whose title contains "battle" replays it with color-coded
+  A/B/C message borders.
 
 ## Copilot avatars
 

@@ -6,6 +6,15 @@ const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const modelA = document.getElementById('modelA');
 const modelB = document.getElementById('modelB');
+const modelC = document.getElementById('modelC');
+const labelC = document.getElementById('labelC');
+const botcount = document.getElementById('botcount');
+const maxturns = document.getElementById('maxturns');
+const judgeModel = document.getElementById('judgeModel');
+const verdictBtn = document.getElementById('verdict');
+const healthEl = document.getElementById('health');
+const tokensEl = document.getElementById('tokens');
+const newmsgsBtn = document.getElementById('newmsgs');
 const statusEl = document.getElementById('status');
 const sessionsEl = document.getElementById('sessions');
 const sidebar = document.getElementById('sidebar');
@@ -17,6 +26,29 @@ const battleturn = document.getElementById('battleturn');
 const sessFilter = document.getElementById('sessfilter');
 const newchatBtn = document.getElementById('newchat');
 const toastsEl = document.getElementById('toasts');
+
+/* ---------- Smart scrolling: only auto-scroll when pinned to the bottom ---------- */
+let pinned = true;
+chat.addEventListener('scroll', () => {
+  pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 60;
+  if (pinned) newmsgsBtn.hidden = true;
+});
+function autoScroll() {
+  if (pinned) chat.scrollTop = chat.scrollHeight;
+  else newmsgsBtn.hidden = false;
+}
+function forceScroll() {
+  pinned = true;
+  newmsgsBtn.hidden = true;
+  chat.scrollTop = chat.scrollHeight;
+}
+newmsgsBtn.onclick = forceScroll;
+
+/* ---------- Rough token estimate (chars / 4) ---------- */
+function updateTokens() {
+  const chars = chat.textContent.length;
+  tokensEl.textContent = chars ? '~' + (chars / 4000).toFixed(1) + 'k tokens' : '';
+}
 
 /* ---------- Small UI utilities ---------- */
 function toast(msg) {
@@ -105,13 +137,75 @@ function makeAvatar(el, captionEl) {
 const avatarA = makeAvatar(document.getElementById('avatarA'), document.getElementById('capA'));
 const avatarB = makeAvatar(document.getElementById('avatarB'), document.getElementById('capB'));
 
+/* Bot roster: A and B always exist; C is created on demand for 3-bot battles. */
+let avatarC = null;
+
+function ensureBotC() {
+  if (avatarC) return;
+  const unit = document.getElementById('avatarB').closest('.avatar-unit').cloneNode(true);
+  const svg = unit.querySelector('svg');
+  svg.id = 'avatarC';
+  svg.dataset.state = 'idle';
+  unit.querySelector('.name').id = 'nameC';
+  unit.querySelector('.caption').id = 'capC';
+  document.getElementById('avatarbox').appendChild(unit);
+  avatarC = makeAvatar(svg, unit.querySelector('.caption'));
+}
+
+/* Active bots for the battle loop. */
+function battleBots() {
+  const list = [
+    { sel: modelA, avatar: avatarA, tag: 'A' },
+    { sel: modelB, avatar: avatarB, tag: 'B' },
+  ];
+  if (botcount.value === '3') {
+    ensureBotC();
+    list.push({ sel: modelC, avatar: avatarC, tag: 'C' });
+  }
+  return list;
+}
+
+botcount.onchange = () => {
+  const three = botcount.value === '3';
+  labelC.hidden = !three;
+  if (three) ensureBotC();
+  document.getElementById('avatarC')?.closest('.avatar-unit').classList.toggle('hidden', !three);
+  updateNames();
+};
+
+/* ---------- Backend health ---------- */
+async function healthCheck() {
+  try {
+    const r = await fetch('/api/models');
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    healthEl.className = 'dot ok';
+    healthEl.title = 'backend reachable';
+  } catch (e) {
+    healthEl.className = 'dot bad';
+    healthEl.title = 'backend unreachable: ' + e.message;
+  }
+}
+setInterval(healthCheck, 20000);
+
+/* Show a Reconnect button next to the status text after a failed load. */
+function showReconnect(label) {
+  statusEl.textContent = '';
+  statusEl.append(document.createTextNode(label + ' '), (() => {
+    const b = document.createElement('button');
+    b.textContent = 'Reconnect';
+    b.onclick = async () => { statusEl.textContent = 'reconnecting…'; await loadModels(); await loadSessions(); };
+    return b;
+  })());
+}
+
 /* ---------- Model dropdowns ---------- */
 async function loadModels() {
   try {
     const r = await fetch('/api/models');
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    for (const sel of [modelA, modelB]) {
+    for (const sel of [modelA, modelB, modelC, judgeModel]) {
       sel.innerHTML = '';
       for (const m of data.models) {
         const o = document.createElement('option');
@@ -124,15 +218,19 @@ async function loadModels() {
     const savedB = localStorage.getItem('oc-chat-model-b');
     modelA.value = savedA || 'nvidia/deepseek-ai/deepseek-v4-flash-0731';   // Bot A: DeepSeek V4 Flash 0731
     modelB.value = savedB || 'opencode/big-pickle';                          // Bot B: Big Pickle
-    for (const sel of [modelA, modelB]) {
+    modelC.value = localStorage.getItem('oc-chat-model-c') || modelC.options[0]?.value;
+    judgeModel.value = localStorage.getItem('oc-chat-judge') || judgeModel.options[0]?.value;
+    for (const sel of [modelA, modelB, modelC, judgeModel]) {
       if (![...sel.options].some(o => o.value === sel.value)) {
         sel.selectedIndex = sel.selectedIndex === 0 && sel.options.length > 1 ? 1 : 0;
       }
     }
     updateNames();
+    healthEl.className = 'dot ok';
     statusEl.textContent = data.models.length ? '' : 'no models found in opencode';
   } catch (e) {
-    statusEl.textContent = 'models failed to load: ' + e.message;
+    healthEl.className = 'dot bad';
+    showReconnect('models failed to load: ' + e.message);
     toast('Models failed to load: ' + e.message);
   }
 }
@@ -144,9 +242,13 @@ function shortName(sel) {
 function updateNames() {
   document.getElementById('nameA').textContent = 'A: ' + shortName(modelA);
   document.getElementById('nameB').textContent = 'B: ' + shortName(modelB);
+  const nameC = document.getElementById('nameC');
+  if (nameC) nameC.textContent = 'C: ' + shortName(modelC);
 }
 modelA.onchange = () => { localStorage.setItem('oc-chat-model', modelA.value); updateNames(); };
 modelB.onchange = () => { localStorage.setItem('oc-chat-model-b', modelB.value); updateNames(); };
+modelC.onchange = () => { localStorage.setItem('oc-chat-model-c', modelC.value); updateNames(); };
+judgeModel.onchange = () => { localStorage.setItem('oc-chat-judge', judgeModel.value); };
 
 /* ---------- Sidebar ---------- */
 let sessionsCache = [];   // last /api/sessions payload, for client-side filtering
@@ -258,9 +360,20 @@ async function openSession(sid) {
     const frag = document.createDocumentFragment();   // batch builds to avoid layout thrashing
     for (const m of data.messages) frag.append(makeMsg(m.role, m.text));
     chat.append(frag);
+    /* Battle replay: tint alternating assistant bubbles as A/B/C. */
+    const sess = sessionsCache.find(s => s.id === sid);
+    if (sess && sess.title.toLowerCase().includes('battle')) {
+      let i = 0;
+      const n = botcount.value === '3' ? 3 : 2;   // replay tint cycles A/B(/C)
+      for (const m of chat.querySelectorAll('.msg.assistant')) {
+        m.classList.add('bot' + 'ABC'[i++ % n]);
+      }
+    }
     addCodeCopyButtons(chat);
     updateEmpty();
-    chat.scrollTop = chat.scrollHeight;
+    updateTokens();
+    loadDraft();
+    forceScroll();
   } catch (e) {
     addMsg('error', 'Could not load history: ' + e.message);
     toast('Could not load history: ' + e.message);
@@ -316,7 +429,8 @@ function addMsg(role, text, who, onRetry) {
   chat.appendChild(d);
   addCodeCopyButtons(d);
   updateEmpty();
-  chat.scrollTop = chat.scrollHeight;
+  updateTokens();
+  autoScroll();
   return d;
 }
 
@@ -360,7 +474,8 @@ async function streamReply({ model, text, session_id, new_session, avatar, who, 
           if (!raf) raf = requestAnimationFrame(() => {
             raf = 0;
             bubble._content.innerHTML = renderContent(out);
-            chat.scrollTop = chat.scrollHeight;   // scroll anchoring
+            updateTokens();
+            autoScroll();
           });
         }
       }
@@ -369,6 +484,8 @@ async function streamReply({ model, text, session_id, new_session, avatar, who, 
     bubble._raw = out || '(empty reply)';
     bubble._content.innerHTML = renderContent(bubble._raw);
     addCodeCopyButtons(bubble);
+    updateTokens();
+    autoScroll();
     avatar.setMessage(out.slice(0, 120));
     avatar.setState('idle');
     return { text: out, session_id: sid, error: null };
@@ -411,12 +528,14 @@ async function send(textOverride) {
   input.value = '';
   autoGrow();
   localStorage.setItem('oc-chat-model', modelA.value);
+  localStorage.removeItem(draftKey());   // draft sent
   addMsg('user', text);
   stopBtn.style.display = '';   // Stop can cancel your own message too
   try {
     const res = await streamReply({
       model: modelA.value, text, session_id: sessionId, new_session: sessionId == null,
-      avatar: avatarA, who: shortName(modelA), title: 'Web chat',
+      avatar: avatarA, who: shortName(modelA),
+      title: sessionId == null ? text.slice(0, 48) : 'Web chat',   // auto-title new chats
       onRetry: () => send(text)
     });
     if (!res.error) {   // only advance the session on success; errors are shown in-bubble
@@ -437,37 +556,41 @@ async function send(textOverride) {
   input.focus();
 }
 
-/* ---------- Bot battle: A and B talk to each other ---------- */
-const MAX_BATTLE_TURNS = 100;   // hard safety cap only; battle otherwise runs until agreement/stop
+/* ---------- Bot battle: the bots talk to each other ---------- */
+const MAX_TURNS_HARD_CAP = 100;   // absolute ceiling; the header input usually ends it sooner
 
 async function startBattle() {
   const topic = input.value.trim() || 'Debate: is the tune feature-tagged "Opencode Chat" the best way to chat with AI?';
   if (busy) return;
+  const bots = battleBots();
+  const limit = Math.min(Math.max(parseInt(maxturns.value, 10) || 20, 2), MAX_TURNS_HARD_CAP);
   busy = true;
   setBusyUI(true);
+  verdictBtn.disabled = true;
   battleAbort = false;
   battleSession = null;         // each battle = ONE fresh unified session
   input.value = '';
   autoGrow();
+  localStorage.removeItem(draftKey());
   sendBtn.style.display = 'none';
   stopBtn.style.display = '';
-  avatarA.setState('idle');
-  avatarB.setState('idle');
+  for (const b of bots) b.avatar.setState('idle');
   addMsg('user', '⚔ Battle topic: ' + topic, 'You (referee)');
-  const sys = n => `You are bot ${n} in a friendly two-bot chat for a human audience. Topic: "${topic}". Keep each reply short (2-4 sentences), casual, and respond directly to the other bot. No emojis. When you genuinely agree with the other bot, END your reply with the single token "[AGREED]" and nothing after it.`;
-  let lastMsg = `Start the conversation. ${sys('A')}`;
+  const tags = bots.map(b => b.tag).join('/');
+  const sys = n => `You are bot ${n} in a friendly ${bots.length}-bot chat for a human audience. Topic: "${topic}". Keep each reply short (2-4 sentences), casual, and respond directly to the other bots. No emojis. When you genuinely agree with the other bots, END your reply with the single token "[AGREED]" and nothing after it.`;
+  let lastMsg = `Start the conversation. ${sys(bots[0].tag)}`;
   try {
-    for (let i = 0; i < MAX_BATTLE_TURNS && !battleAbort; i++) {
-      const aTurn = i % 2 === 0;
-      battleturn.textContent = 'Turn ' + (i + 1) + ' — Bot ' + (aTurn ? 'A' : 'B')
-        + ' (' + shortName(aTurn ? modelA : modelB) + ')';
+    for (let i = 0; i < limit && !battleAbort; i++) {
+      const bot = bots[i % bots.length];
+      battleturn.textContent = 'Turn ' + (i + 1) + '/' + limit + ' — Bot ' + bot.tag
+        + ' (' + shortName(bot.sel) + ')';
       const res = await streamReply({
-        model: aTurn ? modelA.value : modelB.value,
+        model: bot.sel.value,
         text: lastMsg,
         session_id: battleSession,
         new_session: i === 0,               // create the ONE session on turn 0 only
-        avatar: aTurn ? avatarA : avatarB,
-        who: (aTurn ? 'A: ' : 'B: ') + shortName(aTurn ? modelA : modelB),
+        avatar: bot.avatar,
+        who: bot.tag + ': ' + shortName(bot.sel),
         title: 'Bot battle'
       });
       if (res.error) break;                 // server/provider error surfaced in the bubble
@@ -483,23 +606,57 @@ async function startBattle() {
       }
       if (!res.text) break;                 // empty reply ends the battle
       // The full transcript already lives in the session history, so the next
-      // turn only needs the floor handed to the other bot — no need to repeat
+      // turn only needs the floor handed to the next bot — no need to repeat
       // the previous reply in the prompt (context stays linear, no echo bait).
-      lastMsg = sys(aTurn ? 'B' : 'A') + '\n\nReply to the previous message.';
+      const next = bots[(i + 1) % bots.length];
+      lastMsg = sys(next.tag) + '\n\nReply to the previous message.';
     }
+    if (!battleAbort && limit >= 2) battleturn.textContent = 'Battle over (' + tags + ')';
   } catch (e) {
     addMsg('error', 'Battle error: ' + e.message);
-    avatarA.setState('error');
-    avatarB.setState('error');
+    for (const b of bots) b.avatar.setState('error');
   }
   battleAbort = false;
   busy = false;
   setBusyUI(false);
-  battleturn.textContent = '';
+  if (!battleMode) battleturn.textContent = '';
+  verdictBtn.disabled = false;   // transcript now exists — judge can weigh in
+  setTimeout(() => battleturn.textContent = battleMode ? battleturn.textContent || 'Battle over — ask the judge for a verdict' : '', 0);
   sendBtn.style.display = '';
   stopBtn.style.display = 'none';
   loadSessions();
 }
+
+/* ---------- Judge: a third model scores the finished battle ---------- */
+async function requestVerdict() {
+  if (busy || !judgeModel.value) return;
+  const transcript = [...chat.querySelectorAll('.msg')]
+    .map(m => (m.querySelector('.who')?.textContent || m.className.replace('msg ', '')) + ': ' + m._raw)
+    .filter(t => t && !t.endsWith(': …'))
+    .join('\n\n')
+    .slice(-12000);   // keep the judge prompt a sane size
+  if (!transcript) return toast('Nothing to judge yet — run a battle first');
+  busy = true;
+  setBusyUI(true);
+  verdictBtn.disabled = true;
+  battleturn.textContent = '⚖ Judge (' + shortName(judgeModel) + ') is deliberating…';
+  const prompt = 'You are judging a bot battle. Here is the transcript:\n\n' + transcript
+    + '\n\nIn 3-5 sentences: declare a winner (or a draw), give the single strongest argument each side made, and one memorable quote. No emojis.';
+  const noAvatar = { setState() {}, setMessage() {} };   // judge has no avatar of its own
+  try {
+    await streamReply({
+      model: judgeModel.value, text: prompt, session_id: null, new_session: true,
+      avatar: noAvatar, who: '⚖ Judge: ' + shortName(judgeModel), title: 'Battle verdict'
+    });
+  } finally {
+    busy = false;
+    setBusyUI(false);
+    verdictBtn.disabled = false;
+    battleturn.textContent = 'Verdict delivered';
+    loadSessions();
+  }
+}
+verdictBtn.onclick = requestVerdict;
 
 /* ---------- Wiring ---------- */
 sendBtn.onclick = () => battleMode ? startBattle() : send();
@@ -525,6 +682,8 @@ newchatBtn.onclick = () => {
   localStorage.removeItem('oc-chat-session');
   chat.querySelectorAll('.msg').forEach(m => m.remove());
   updateEmpty();
+  updateTokens();
+  loadDraft();
   loadSessions();
   input.focus();
 };
@@ -537,16 +696,54 @@ input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
 });
 
-/* Textarea grows with content up to ~6 lines. */
+/* Global keyboard shortcuts (see #shortcutpop). */
+const shortcutPop = document.getElementById('shortcutpop');
+document.getElementById('help').onclick = e => {
+  e.stopPropagation();
+  shortcutPop.hidden = !shortcutPop.hidden;
+};
+document.addEventListener('click', e => {
+  if (!shortcutPop.hidden && !shortcutPop.contains(e.target)) shortcutPop.hidden = true;
+});
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    if (!busy) newchatBtn.click();
+  } else if (e.key === '/' && !typing) {
+    e.preventDefault();
+    sidebar.classList.remove('collapsed');
+    sessFilter.focus();
+  } else if (e.key === 'Escape') {
+    if (!shortcutPop.hidden) shortcutPop.hidden = true;
+    else if (!typing && !sidebar.classList.contains('collapsed')) {
+      sidebar.classList.add('collapsed');
+      localStorage.setItem('oc-chat-sidebar', '0');
+    }
+  }
+});
+
+/* Textarea grows with content up to ~6 lines. Drafts persist per session. */
 function autoGrow() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 150) + 'px';
 }
-input.addEventListener('input', autoGrow);
+const draftKey = () => 'oc-chat-draft:' + (sessionId || 'new');
+function loadDraft() {
+  input.value = localStorage.getItem(draftKey()) || '';
+  autoGrow();
+}
+input.addEventListener('input', () => {
+  autoGrow();
+  localStorage.setItem(draftKey(), input.value);
+});
 
 /* Empty-state sample prompts fill the input (battle prompts also start battle mode). */
 for (const b of document.querySelectorAll('#empty .prompt')) wirePrompt(b);
 
+healthCheck();
 loadModels();
 loadSessions();
+loadDraft();
 if (sessionId) openSession(sessionId);
+else updateTokens();
