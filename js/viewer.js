@@ -19,16 +19,20 @@ function escapeHtml(s) {
 function renderContent(text) {
   const esc = escapeHtml(text);
   const lines = esc.split('\n');
-  let html = '', inCode = false, buf = [];
+  let html = '', inCode = false, buf = [], curLang = '';
   for (const line of lines) {
     const fence = line.match(/^\s*```(.*?)\s*$/);
     if (fence) {
       if (inCode) {                       // closer
         inCode = false;
-        html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
+        html += '<div class="codewrap">'
+          + (curLang ? '<div class="codehead">' + curLang + '</div>' : '')
+          + '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre></div>';
         buf = [];
-      } else {                            // opener (language tag in fence[1] is ignored)
+        curLang = '';
+      } else {                            // opener; fence[1] is the language tag
         inCode = true;
+        curLang = fence[1] || '';
       }
       continue;
     }
@@ -36,7 +40,9 @@ function renderContent(text) {
     else html += line + '\n';
   }
   if (inCode) {                           // unclosed fence: render the remainder as code
-    html += '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre>';
+    html += '<div class="codewrap">'
+      + (curLang ? '<div class="codehead">' + curLang + '</div>' : '')
+      + '<pre class="codeblock"><code>' + buf.join('\n') + '</code></pre></div>';
   }
   return html || '…';
 }

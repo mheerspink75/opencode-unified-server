@@ -57,6 +57,17 @@ body {
   white-space: nowrap;
 }
 
+#sessfilter {
+  margin: 0 .75rem .5rem;
+  background: #2a2b31;
+  color: #e6e6e6;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: .35rem .6rem;
+  font-size: .8rem;
+  width: calc(100% - 1.5rem);
+}
+
 #sessions {
   flex: 1;
   overflow-y: auto;
@@ -160,6 +171,17 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* Visible keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid #6ea8ff;
+  outline-offset: 2px;
+}
+
 #status {
   font-size: .8rem;
   opacity: .7;
@@ -168,10 +190,71 @@ button {
 #chat {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  /* keep the column readable on ultrawide monitors */
+  padding: 1rem max(1rem, calc((100% - 900px) / 2));
   display: flex;
   flex-direction: column;
   gap: .75rem;
+}
+
+/* Battle-mode banner under the header */
+#battlebar {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  align-items: center;
+  padding: .4rem 1rem;
+  background: #241f33;
+  border-bottom: 1px solid #8a63d2;
+  font-size: .8rem;
+}
+
+#battlebar[hidden] {
+  display: none;
+}
+
+#battleturn {
+  opacity: .7;
+}
+
+/* Empty state for a fresh chat */
+#empty {
+  margin: auto;
+  text-align: center;
+  max-width: 420px;
+  color: #b9bbc4;
+}
+
+#empty h2 {
+  margin-bottom: .5rem;
+  color: #e6e6e6;
+}
+
+#empty p {
+  margin-bottom: 1rem;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+#empty .prompts {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+#empty .prompt {
+  background: #2a2b31;
+  border: 1px solid #3a3b44;
+  border-radius: 8px;
+  padding: .55rem .8rem;
+  color: #cfd2dc;
+  font-size: .85rem;
+  text-align: left;
+}
+
+#empty .prompt:hover {
+  border-color: #2f6fed;
+  background: #2e3242;
 }
 
 .msg {
@@ -180,16 +263,46 @@ button {
   border-radius: 12px;
   white-space: pre-wrap;
   line-height: 1.45;
+  position: relative;
 }
 
 .user {
   align-self: flex-end;
-  background: #2f6fed;
+  background: #3b82f6;
+  color: #fff;
 }
 
 .assistant {
   align-self: flex-start;
-  background: #2a2b31;
+  background: #26282f;
+  border: 1px solid #33363f;
+}
+
+/* Hover actions: copy + retry */
+.msg .actions {
+  position: absolute;
+  top: -0.6rem;
+  right: .4rem;
+  display: none;
+  gap: .25rem;
+}
+
+.msg:hover .actions {
+  display: flex;
+}
+
+.msg .actions button {
+  background: #1b1c21;
+  border: 1px solid #444;
+  border-radius: 5px;
+  color: #cfd2dc;
+  font-size: .7rem;
+  padding: .12rem .45rem;
+}
+
+.msg .actions button:hover {
+  border-color: #2f6fed;
+  color: #fff;
 }
 
 .error {
@@ -210,12 +323,55 @@ button {
   min-width: 0;
 }
 
+.codewrap {
+  margin: .4rem 0;
+  position: relative;
+}
+
+.codehead {
+  background: #1d1e24;
+  border: 1px solid var(--code-border);
+  border-bottom: none;
+  border-radius: var(--code-radius) var(--code-radius) 0 0;
+  padding: .2rem .8rem;
+  font-family: var(--mono);
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #8b8fa3;
+}
+
+.codehead + .codeblock {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin-top: 0;
+}
+
+.codewrap .actions {
+  position: absolute;
+  top: .25rem;
+  right: .25rem;
+  display: none;
+}
+
+.codewrap:hover .actions {
+  display: block;
+}
+
+.codewrap .actions button {
+  background: #1b1c21;
+  border: 1px solid #444;
+  border-radius: 5px;
+  color: #cfd2dc;
+  font-size: .7rem;
+  padding: .12rem .45rem;
+}
+
 .codeblock {
   background: var(--code-bg);
   border: 1px solid var(--code-border);
   border-radius: var(--code-radius);
   padding: .6rem .8rem;
-  margin: .4rem 0;
   font-family: var(--mono);
   font-size: .85rem;
   line-height: 1.5;
@@ -453,4 +609,74 @@ button {
 #battle.on {
   background: #8a63d2;
   color: #fff;
+}
+
+/* Toasts for action failures */
+#toasts {
+  position: fixed;
+  bottom: 5.5rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  z-index: 50;
+}
+
+.toast {
+  background: #5c2222;
+  border: 1px solid #8a3a3a;
+  border-radius: 8px;
+  color: #f2d2d2;
+  font-size: .85rem;
+  padding: .55rem .8rem;
+  max-width: 340px;
+  animation: toastin .18s ease-out;
+}
+
+@keyframes toastin {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Inline rename input in the sidebar */
+.sess .rename {
+  flex: 1;
+  min-width: 0;
+  background: #1b1c21;
+  border: 1px solid #2f6fed;
+  border-radius: 4px;
+  color: #e6e6e6;
+  font-size: .85rem;
+  padding: .15rem .4rem;
+}
+
+/* Narrow screens: sidebar becomes an overlay drawer */
+@media (max-width: 700px) {
+  #sidebar {
+    position: fixed;
+    z-index: 40;
+    height: 100%;
+    box-shadow: 4px 0 18px rgba(0, 0, 0, .5);
+  }
+
+  header {
+    flex-wrap: wrap;
+    gap: .4rem;
+  }
+
+  .msg {
+    max-width: 92%;
+  }
+
+  #avatarbox {
+    gap: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar,
+  .avatar * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

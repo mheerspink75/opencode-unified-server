@@ -12,6 +12,7 @@
   <div id="sidebar">
     <button id="newchat">+ New chat</button>
     <h2>History</h2>
+    <input id="sessfilter" type="search" placeholder="Filter chats…" aria-label="Filter chats">
     <div id="sessions"></div>
   </div>
   <div id="main">
@@ -23,6 +24,10 @@
       <label>🤖 <select id="modelB"></select></label>
       <button id="battle" title="Bot battle mode: the two bots talk to each other">⚔ Battle</button>
     </header>
+    <div id="battlebar" hidden>
+      <span>⚔ <strong>Battle mode</strong> — the bots are talking to each other</span>
+      <span id="battleturn"></span>
+    </div>
     <div id="avatarbox">
       <div class="avatar-unit">
         <svg class="avatar" id="avatarA" data-state="idle" viewBox="0 0 110 110" aria-label="Bot A avatar">
@@ -55,13 +60,24 @@
         <div class="caption" id="capB"></div>
       </div>
     </div>
-    <div id="chat"></div>
+    <div id="chat">
+      <div id="empty">
+        <h2>Opencode Chat</h2>
+        <p>Chat with Bot A below, or hit <strong>⚔ Battle</strong> in the header, give the bots a topic, and watch them argue.</p>
+        <div class="prompts">
+          <button class="prompt" type="button">Explain quantum computing in one paragraph</button>
+          <button class="prompt" type="button">Write a Python one-liner that reverses a string</button>
+          <button class="prompt" type="button">⚔ Battle: tabs vs spaces</button>
+        </div>
+      </div>
+    </div>
     <div id="composer">
       <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
       <button id="send">Send</button>
       <button id="stop" style="display:none">Stop</button>
     </div>
   </div>
+  <div id="toasts" aria-live="polite"></div>
   <script src="/js/viewer.js"></script>
   <script src="/js/app.js"></script>
 </body>

@@ -153,9 +153,17 @@ Press **Ctrl+C** to stop cleanly (no orphan processes).
    - Bot B defaults to **Big Pickle**.
 2. Type a message and press **Enter** to send (**Shift+Enter** for a newline).
 3. The **sidebar** lists your past conversations — click one to reload its full
-   history. Hover a chat and click **✕** to delete it (asks for confirmation), and
-   use **☰** in the header to collapse/expand the sidebar.
-4. **+ New chat** starts a fresh conversation.
+   history, **double-click** a title to rename it inline, and hover a chat and
+   click **✕** to delete it (asks for confirmation). The filter box above the
+   list narrows sessions by title. Use **☰** in the header to collapse/expand
+   the sidebar (on narrow screens it becomes an overlay drawer).
+4. **+ New chat** starts a fresh conversation. An empty chat shows a placeholder
+   with clickable sample prompts.
+5. Composer niceties: the textarea auto-grows up to ~6 lines, controls disable
+   while a reply is streaming, and failures surface as dismissible **toasts**.
+6. Message bubbles have hover actions: **Copy** (message text), a **Copy** button
+   on every code block (fenced blocks also show their language label), a
+   timestamp tooltip, and **Retry** on error bubbles.
 
 Note: the sidebar shows all opencode sessions, including ones started from the
 `opencode` TUI — you can continue a terminal conversation in the browser and vice
@@ -174,6 +182,8 @@ avatar:
   (a `MAX_BATTLE_TURNS` ceiling exists only as a safety net). Both bots share a
   single unified opencode session titled "Bot battle", so the full transcript is
   preserved in one session.
+- While battle mode is toggled on, a banner under the header shows the current
+  turn number and which bot is speaking.
 
 ## Copilot avatars
 
